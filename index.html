@@ -353,22 +353,57 @@ function setSyncStatus(st, msg){
 }
 
 /* Save to Firestore */
+/* Remove undefined/null values recursively — Firestore rejects them */
+function cleanForFirestore(obj){
+  if(Array.isArray(obj)){
+    return obj.map(function(item){return cleanForFirestore(item);}).filter(function(item){return item!==undefined;});
+  }
+  if(obj&&typeof obj==='object'&&!(obj instanceof Date)){
+    var out={};
+    Object.keys(obj).forEach(function(k){
+      var v=obj[k];
+      if(v===undefined||v===null) return; /* skip */
+      if(typeof v==='string'&&v==='') return; /* skip empty strings only if top-level keys that cause issues */
+      out[k]=cleanForFirestore(v);
+    });
+    return out;
+  }
+  return obj;
+}
+
 function saveS(){
+  /* Always keep localStorage as fallback */
+  try{localStorage.setItem('hht8',JSON.stringify(S));}catch(e){}
+  if(!db) return;
   setSyncStatus('syncing','Saving...');
-  db.doc(DOC_PATH).set(JSON.parse(JSON.stringify(S)))
-    .then(function(){ setSyncStatus('ok','Saved'); })
-    .catch(function(e){ setSyncStatus('error','Save failed'); console.error(e); });
+  var payload;
+  try{
+    payload=cleanForFirestore(JSON.parse(JSON.stringify(S)));
+  }catch(e){
+    console.error('cleanForFirestore error:',e);
+    setSyncStatus('error','Data error');
+    return;
+  }
+  console.log('Firebase: saving payload keys:',Object.keys(payload));
+  db.doc(DOC_PATH).set(payload)
+    .then(function(){ setSyncStatus('ok','Live'); })
+    .catch(function(e){
+      setSyncStatus('error','Error: '+(e.code||e.message));
+      console.error('Firestore save error:',e.code,e.message,e);
+    });
 }
 
 /* Load from Firestore once, then subscribe to live updates */
 function initFirebase(){
   setSyncStatus('init','Connecting...');
+  console.log('Firebase: starting auth...');
   auth.signInAnonymously()
-    .then(function(){
+    .then(function(cred){
+      console.log('Firebase: auth OK, uid=',cred.user.uid);
       setSyncStatus('syncing','Loading...');
-      /* Real-time listener: updates UI whenever another user saves */
       if(unsubscribe) unsubscribe();
       unsubscribe = db.doc(DOC_PATH).onSnapshot(function(snap){
+        console.log('Firebase: snapshot received, exists=',snap.exists);
         if(snap.exists){
           var remote = snap.data();
           var migrated = migrate(remote);
@@ -378,21 +413,22 @@ function initFirebase(){
             render();
           }
         } else {
-          /* First run: no data in Firestore yet, use defaults */
-          setSyncStatus('ok','Ready (new)');
+          setSyncStatus('ok','New project');
+          console.log('Firebase: no data yet, saving defaults...');
           saveS();
         }
       }, function(err){
-        setSyncStatus('error','Sync error');
-        console.error(err);
+        setSyncStatus('error',err.code||'Sync error');
+        console.error('Firestore snapshot error:',err.code,err.message);
       });
     })
     .catch(function(e){
-      setSyncStatus('error','Auth failed');
-      console.error(e);
+      setSyncStatus('error',e.code||'Auth failed');
+      console.error('Firebase auth error:',e.code,e.message);
       /* Fallback to localStorage */
       var local = localStorage.getItem('hht8');
       if(local) try{ S = migrate(JSON.parse(local)) || buildDefault(); }catch(ex){ S = buildDefault(); }
+      render();
     });
 }
 
@@ -409,15 +445,15 @@ var DEFAULT_PIN='1234';
    COMPANY HELPERS
    ============================================================ */
 var DEFAULT_COMPANIES=[
-  {id:'c1',name:'BIK',    color:'#bl',tarifs:{CARP:0,STEEL:0,HELP:0,FINISH:0,''  :0}},
-  {id:'c2',name:'LOAN GR',color:'#gl',tarifs:{CARP:24,STEEL:24,HELP:18,FINISH:0,'':0}},
-  {id:'c3',name:'LOAN BR',color:'#tl',tarifs:{CARP:24,STEEL:24,HELP:18,FINISH:0,'':0}},
-  {id:'c4',name:'BRILLANCE',color:'#pl',tarifs:{CARP:0,STEEL:0,HELP:0,FINISH:0,'':0}}
+  {id:'c1',name:'BIK',    color:'#bl',bg:'var(--bl)',co:'var(--blue)',tarifs:{CARP:0,STEEL:0,HELP:0,FINISH:0,OTHER:0}},
+  {id:'c2',name:'LOAN GR',color:'#gl',bg:'var(--gl)',co:'var(--green)',tarifs:{CARP:24,STEEL:24,HELP:18,FINISH:0,OTHER:0}},
+  {id:'c3',name:'LOAN BR',color:'#tl',bg:'var(--tl)',co:'var(--tea)',tarifs:{CARP:24,STEEL:24,HELP:18,FINISH:0,OTHER:0}},
+  {id:'c4',name:'BRILLANCE',color:'#pl',bg:'var(--pl)',co:'var(--pur)',tarifs:{CARP:0,STEEL:0,HELP:0,FINISH:0,OTHER:0}}
 ];
 
 function getCompany(id){for(var i=0;i<S.companies.length;i++)if(S.companies[i].id===id)return S.companies[i];return null;}
 function getCompanyByName(name){for(var i=0;i<S.companies.length;i++)if(S.companies[i].name===name)return S.companies[i];return null;}
-function getPU(companyId,spec){var c=getCompany(companyId);if(!c)return 0;var v=c.tarifs[spec!==undefined?spec:''];return v!==undefined?v:0;}
+function getPU(companyId,spec){var c=getCompany(companyId);if(!c)return 0;var sk=spec!==undefined&&spec!==''?spec:'OTHER'; var v=c.tarifs[sk];return v!==undefined?v:0;}
 
 function specLabel(key){for(var i=0;i<SPECS.length;i++)if(SPECS[i].key===key)return SPECS[i].label;return '';}
 function uid(){return 'x'+Math.random().toString(36).substr(2,9);}
@@ -1377,9 +1413,9 @@ function renderCompanyModal(box){
 
 function updateCoName(id,val){for(var i=0;i<S.companies.length;i++){if(S.companies[i].id===id){S.companies[i].name=val;break;}}saveS();}
 function updateCoColor(id,key,val){for(var i=0;i<S.companies.length;i++){if(S.companies[i].id===id){S.companies[i][key]=val;break;}}saveS();}
-function updateTarif(id,spec,val){for(var i=0;i<S.companies.length;i++){if(S.companies[i].id===id){S.companies[i].tarifs[spec]=+parseFloat(val).toFixed(2);break;}}saveS();}
+function updateTarif(id,spec,val){for(var i=0;i<S.companies.length;i++){if(S.companies[i].id===id){var tkey=spec!==''?spec:'OTHER'; S.companies[i].tarifs[tkey]=+parseFloat(val).toFixed(2);break;}}saveS();}
 function addCompany(){
-  var tarifs={};for(var i=0;i<SPECS.length;i++)tarifs[SPECS[i].key]=0;
+  var tarifs={CARP:0,STEEL:0,HELP:0,FINISH:0,OTHER:0};
   var co={id:uid(),name:'New company',bg:'var(--bg2)',co:'var(--tx2)',tarifs:tarifs};
   S.companies.push(co); saveS(); openModal('companies');
 }
