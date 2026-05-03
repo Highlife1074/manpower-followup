@@ -1168,62 +1168,86 @@ function renderBotRecap(page){
 /* Collect all editable cells in current table */
 function getEdtCells(){return Array.prototype.slice.call(document.querySelectorAll('td.edt'));}
 
-function openInput(td,val,borderCol,onCommit){
+/* ---- Keyboard nav: save data immediately, open next cell, render at the end ---- */
+var NAV_ACTIVE=false; /* suppress render() during cell-to-cell navigation */
+
+function openInput(td,val,borderCol,onSave){
   if(td.querySelector('input')) return;
-  td.innerHTML=''; var inp=document.createElement('input');
-  inp.type='number'; inp.step='0.1'; inp.min='0'; inp.value=val||'';
-  inp.style.cssText='width:100%;background:rgba(61,90,128,.08);border:1.5px solid '+borderCol+';border-radius:3px;padding:2px 4px;font-family:var(--mono);font-size:11px;color:var(--tx);text-align:right;outline:none;';
-  td.appendChild(inp); inp.focus(); inp.select();
-  var done=false;
+  td.innerHTML='';
+  var inp=document.createElement('input');
+  inp.type='number'; inp.step='0.1'; inp.min='0'; inp.value=(val||'');
+  inp.style.cssText='width:100%;background:rgba(61,90,128,.08);border:1.5px solid '+borderCol+
+    ';border-radius:3px;padding:2px 4px;font-family:var(--mono);font-size:11px;'+
+    'color:var(--tx);text-align:right;outline:none;';
+  td.appendChild(inp);
+  inp.focus(); inp.select();
 
-  /* Capture next cell's identity BEFORE any re-render */
-  function getNextCellData(){
-    var cells=getEdtCells(); var idx=cells.indexOf(td);
-    if(idx>=0&&idx<cells.length-1){
-      var nx=cells[idx+1];
-      return {wid:nx.dataset.wid, key:nx.dataset.key, type:nx.dataset.type, m:nx.dataset.m};
-    }
-    return null;
-  }
+  var committed=false;
 
-  /* After render, find the re-rendered cell with same wid+key and open it */
-  function openNextAfterRender(nextData){
-    if(!nextData) return;
-    var cells=getEdtCells();
-    for(var i=0;i<cells.length;i++){
-      if(cells[i].dataset.wid===nextData.wid&&cells[i].dataset.key===nextData.key){
-        cells[i].click(); break;
-      }
-    }
-  }
-
-  function commit(andMove){
-    if(done) return; done=true;
-    var nextData=andMove?getNextCellData():null;
+  function saveValue(){
+    if(committed) return;
+    committed=true;
     var v=parseFloat(inp.value);
-    onCommit(isNaN(v)?0:+v.toFixed(1));
-    /* render() was called inside onCommit; now locate and open next cell */
-    if(andMove) setTimeout(function(){openNextAfterRender(nextData);},40);
+    onSave(isNaN(v)?0:+v.toFixed(1)); /* writes to S, does NOT call render */
   }
 
-  var movingNext=false;
-  inp.addEventListener('blur',function(){
-    if(movingNext) return; /* Tab/Enter handles it — skip blur */
-    commit(false);
-  });
+  function moveToNext(){
+    /* Find next edt cell BEFORE we change anything */
+    var cells=getEdtCells();
+    var idx=cells.indexOf(td);
+    var nextTd=(idx>=0&&idx<cells.length-1)?cells[idx+1]:null;
+    saveValue();
+    if(nextTd){
+      /* Open next cell directly — no render needed */
+      var nwid=nextTd.dataset.wid;
+      var nkey=nextTd.dataset.key;
+      var ntype=nextTd.dataset.type;
+      var nm=nextTd.dataset.m;
+      var nval=0;
+      /* Read current value from S */
+      if(ntype==='bud'){
+        for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===nwid){nval=S.wbs[i].data[nkey]||0;break;}
+      } else if(ntype==='cc-reel'){
+        nval=S.cc[+nm].reel[nwid]||0;
+      } else if(ntype==='cc-rad'){
+        var rv=S.cc[+nm].rad[nwid];
+        if(rv===undefined){for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===nwid){nval=S.wbs[i].data['b'+nm]||0;break;}}
+        else nval=rv;
+      }
+      /* Compute border color for next cell */
+      var nBorder=ntype==='bud'?'var(--blue)':ntype==='cc-reel'?'var(--pur)':'var(--ora)';
+      openInput(nextTd,nval,nBorder,function(v2){
+        /* onSave for next cell — same pattern */
+        if(ntype==='bud'){for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===nwid){S.wbs[i].data[nkey]=v2;break;}}
+        else if(ntype==='cc-reel') S.cc[+nm].reel[nwid]=v2;
+        else if(ntype==='cc-rad') S.cc[+nm].rad[nwid]=v2;
+      });
+    } else {
+      /* No next cell — end of navigation, now render */
+      render();
+    }
+  }
+
   inp.addEventListener('keydown',function(e){
     if(e.key==='Enter'||e.key==='Tab'){
-      e.preventDefault();e.stopPropagation();
-      movingNext=true;
-      commit(true);
+      e.preventDefault(); e.stopPropagation();
+      moveToNext();
     }
-    if(e.key==='Escape'){done=true;render();}
+    if(e.key==='Escape'){committed=true; render();}
+  });
+  inp.addEventListener('blur',function(){
+    /* blur fires when focus moves to next cell input — only render if not moving to another edt */
+    setTimeout(function(){
+      var active=document.activeElement;
+      var inEdt=active&&active.closest&&active.closest('td.edt');
+      if(!inEdt){saveValue(); render();}
+    },0);
   });
 }
 
 function ecBud(td,wid,m,cur){
   var w=null;for(var i=0;i<S.wbs.length;i++){if(S.wbs[i].id===wid){w=S.wbs[i];break;}}if(!w)return;
-  openInput(td,cur,'var(--blue)',function(v){w.data['b'+m]=v;render();});
+  openInput(td,cur,'var(--blue)',function(v){w.data['b'+m]=v;});
 }
 
 function ecCC(td,wid,m,type,cur){
@@ -1231,7 +1255,6 @@ function ecCC(td,wid,m,type,cur){
   openInput(td,cur,borderCol,function(v){
     if(type==='reel')S.cc[m].reel[wid]=v;
     else S.cc[m].rad[wid]=v;
-    render();
   });
 }
 
