@@ -1206,11 +1206,18 @@ function openInput(td,val,borderCol,onCommit){
     if(andMove) setTimeout(function(){openNextAfterRender(nextData);},40);
   }
 
-  inp.addEventListener('blur',function(){commit(false);});
+  var movingNext=false;
+  inp.addEventListener('blur',function(){
+    if(movingNext) return; /* Tab/Enter handles it — skip blur */
+    commit(false);
+  });
   inp.addEventListener('keydown',function(e){
-    if(e.key==='Enter'){e.preventDefault();e.stopPropagation();commit(true);}
+    if(e.key==='Enter'||e.key==='Tab'){
+      e.preventDefault();e.stopPropagation();
+      movingNext=true;
+      commit(true);
+    }
     if(e.key==='Escape'){done=true;render();}
-    if(e.key==='Tab'){e.preventDefault();commit(true);}
   });
 }
 
