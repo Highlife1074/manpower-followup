@@ -262,7 +262,7 @@ tr.dragging{opacity:.3;} tr.dov td{border-top:2px solid var(--blue)!important;}
 .ms-dot{width:14px;height:14px;border-radius:50%;display:inline-block;cursor:pointer;border:1.5px solid transparent;transition:transform .1s;}
 .ms-dot:hover{transform:scale(1.3);}
 .ms-ok{background:var(--green);}
-.ms-free{background:var(--border2);}
+.ms-free{background:#e8b84b;}
 .ms-gap{background:var(--red);}
 .ms-exp{background:#c0a0a0;}
 .ms-out{background:#e8e0d8;}
@@ -283,9 +283,9 @@ tr.dragging{opacity:.3;} tr.dov td{border-top:2px solid var(--blue)!important;}
 .as-chip.exp{background:var(--rl);color:var(--red);}
 .as-add{font-size:10px;color:var(--blue);cursor:pointer;padding:1px 4px;border-radius:8px;border:1px dashed var(--bm);display:inline-block;margin-top:1px;line-height:1.4;}
 .as-add:hover{background:var(--bl);}
-.as-alert-red{background:rgba(168,64,64,.08)!important;}
-.as-alert-ora{background:rgba(140,97,36,.06)!important;}
-.as-alert-ok{background:rgba(58,125,84,.05)!important;}
+.as-alert-red{background:rgba(168,64,64,.12)!important;border-left:3px solid var(--red)!important;}
+.as-alert-ora{background:rgba(140,97,36,.10)!important;border-left:3px solid var(--ora)!important;}
+.as-alert-ok{background:rgba(58,125,84,.08)!important;border-left:3px solid var(--green)!important;}
 
 /* Worker picker dropdown */
 .wpick{position:absolute;top:100%;left:0;z-index:200;background:var(--white);border:1.5px solid var(--border2);border-radius:8px;box-shadow:var(--sh2);min-width:180px;max-height:200px;overflow-y:auto;padding:4px 0;}
@@ -293,6 +293,19 @@ tr.dragging{opacity:.3;} tr.dov td{border-top:2px solid var(--blue)!important;}
 .wpick-item:hover{background:var(--bg2);}
 .wpick-item .wi-name{font-weight:600;color:var(--tx);}
 .wpick-item .wi-spec{font-size:10px;color:var(--tx3);}
+
+/* Suggestions box */
+.sug-fab{position:fixed;bottom:20px;right:20px;z-index:400;background:var(--pur);color:#fff;border:none;border-radius:50%;width:44px;height:44px;font-size:20px;cursor:pointer;box-shadow:var(--sh2);display:flex;align-items:center;justify-content:center;transition:transform .15s;}
+.sug-fab:hover{transform:scale(1.1);}
+.sug-panel{position:fixed;bottom:72px;right:20px;z-index:400;background:var(--white);border:1.5px solid var(--border2);border-radius:14px;padding:18px 20px;width:320px;box-shadow:var(--sh2);display:none;animation:mIn .17s ease;}
+.sug-panel h4{font-size:13px;font-weight:700;margin-bottom:10px;color:var(--pur);}
+.sug-panel textarea{width:100%;border:1.5px solid var(--border2);border-radius:8px;padding:8px 10px;font-family:var(--font);font-size:12px;resize:vertical;min-height:80px;outline:none;background:var(--bg);}
+.sug-panel textarea:focus{border-color:var(--pur);}
+.sug-list{max-height:160px;overflow-y:auto;margin-top:10px;}
+.sug-item{font-size:11px;padding:6px 8px;border-radius:6px;background:var(--bg);margin-bottom:4px;color:var(--tx2);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+.sug-item span{flex:1;}
+.sug-item .sug-del{color:var(--tx3);cursor:pointer;font-size:10px;flex-shrink:0;}
+.sug-item .sug-del:hover{color:var(--red);}
 </style>
 </head>
 <body>
@@ -443,7 +456,8 @@ function buildDefault(){
     ],
     cc:cc,ccM:-1,
     workers:[],
-    assignments:[]
+    assignments:[],
+    suggestions:[]
   };
 }
 
@@ -459,6 +473,7 @@ function migrate(s){
   if(s.ccM===undefined)s.ccM=-1;
   if(!s.workers)s.workers=[];
   if(!s.assignments)s.assignments=[];
+  if(!s.suggestions)s.suggestions=[];
   s.wbs.forEach(function(w){
     if(!w.code)w.code='';
     if(w.spec===undefined)w.spec='';
@@ -508,6 +523,20 @@ function render(){
   else if(VIEW==='assignments')renderAssignmentsPage();
   else renderCCPage(VIEW);
   saveS();
+  wireInvNav();
+}
+/* Wire Tab/Enter navigation on invoice inputs */
+function wireInvNav(){
+  var inputs=Array.prototype.slice.call(document.querySelectorAll('.inv-row input:not([readonly])'));
+  inputs.forEach(function(inp,idx){
+    inp.onkeydown=function(e){
+      if(e.key==='Enter'||e.key==='Tab'){
+        e.preventDefault();
+        var next=inputs[idx+1];
+        if(next){next.focus();next.select();}
+      }
+    };
+  });
 }
 
 /* ============================================================
@@ -1008,22 +1037,46 @@ function renderInvSection(page){
   h+='<div>';
   h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Hours</div>';
   h+='<div class="inv-row"><label>Billed (h)</label><input type="number" step="0.5" placeholder="ex: 1280" value="'+(hrsEntered||'')+'" onchange="saveInvHrs('+page+',this.value)" title="Entering hours auto-updates MM"></div>';
-  h+='<div class="inv-row"><label>Expected (h)</label><input type="number" readonly value="'+(reelMois*160).toFixed(0)+'" style="color:var(--blue);cursor:default"></div>';
+  var assignedCount=0;for(var xi=0;xi<S.assignments.length;xi++){if(S.assignments[xi].month===page&&S.assignments[xi].year===YEAR)assignedCount++;}
+  var expectedHrs=(assignedCount*160);
+  h+='<div class="inv-row"><label>Expected (h)</label><input type="number" readonly value="'+expectedHrs+'" style="color:var(--blue);cursor:default" title="Assigned workers ('+assignedCount+') x 160h"></div>';
   h+='<div class="inv-diff '+diffHrsCls+'">Gap: '+(diffHrs>0?'+':'')+diffHrs+' h</div>';
   h+='</div>';
   /* Hommes-mois */
   h+='<div>';
   h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Man-months</div>';
   h+='<div class="inv-row"><label>Billed (MM)</label><input type="number" step="0.01" placeholder="ex: 8.0" value="'+(hmEntered||'')+'" onchange="saveInvHM('+page+',this.value)" title="Entering MM auto-updates hours"></div>';
-  h+='<div class="inv-row"><label>Expected (MM)</label><input type="number" readonly value="'+reelMois.toFixed(2)+'" style="color:var(--blue);cursor:default"></div>';
+  h+='<div class="inv-row"><label>Expected (MM)</label><input type="number" readonly value="'+assignedCount+'" style="color:var(--blue);cursor:default" title="Assigned workers count"></div>';
   h+='<div class="inv-diff '+diffHrsCls+'">Gap: '+(diffHM>0?'+':'')+diffHM+' HM</div>';
   h+='</div>';
   h+='</div></div>';
 
-  h+='<div class="inv-card"><div class="ic-title">Amount (EUR)</div>';
-  h+='<div class="inv-row"><label>Invoice</label><input type="number" step="100" placeholder="ex: 48000" value="'+(amtEntered||'')+'" onchange="saveInv('+page+',\'amt\',this.value)"></div>';
-  h+='<div class="inv-row"><label>Calculated</label><input type="number" readonly value="'+calcAmt+'" style="color:var(--blue);cursor:default" title="Month actual HM * PU * 160h"></div>';
-  h+='<div class="inv-diff '+diffAmtCls+'">Gap: '+(diffAmt>0?'+':'')+diffAmt+' EUR</div></div>';
+  /* Invoice per company */
+  for(var ci=0;ci<S.companies.length;ci++){
+    var coi=S.companies[ci];
+    /* Calculated = workers assigned to WBS of this company * their PU * 160h */
+    var calcAmtCo=0;
+    for(var xi=0;xi<S.assignments.length;xi++){
+      var ai=S.assignments[xi];
+      if(ai.month!==page||ai.year!==YEAR) continue;
+      var wkAss=getWorker(ai.workerId);
+      if(!wkAss||wkAss.companyId!==coi.id) continue;
+      /* find PU from WBS */
+      var wbsAss=null;for(var xj=0;xj<S.wbs.length;xj++){if(S.wbs[xj].id===ai.wbsId){wbsAss=S.wbs[xj];break;}}
+      var puAss=wbsAss?wbsAss.pu:0;
+      calcAmtCo+=puAss*160;
+    }
+    calcAmtCo=Math.round(calcAmtCo);
+    if(calcAmtCo===0) continue; /* skip companies with no activity */
+    var invKey='amt_'+coi.id;
+    var amtCo=+(inv[invKey]||0);
+    var diffCo=+(amtCo-calcAmtCo);
+    var diffCoSt=Math.abs(diffCo)>200?'warn':'ok';
+    h+='<div class="inv-card"><div class="ic-title">Amount — '+coi.name+'</div>';
+    h+='<div class="inv-row"><label>Invoice</label><input type="number" step="100" placeholder="0" value="'+(amtCo||'')+'" onchange="saveInvCo('+page+',\''+coi.id+'\',this.value)"></div>';
+    h+='<div class="inv-row"><label>Calculated</label><input type="number" readonly value="'+calcAmtCo+'" style="color:var(--blue);cursor:default" title="Assigned workers of '+coi.name+' x PU x 160h"></div>';
+    h+='<div class="inv-diff '+diffCoSt+'">Gap: '+(diffCo>0?'+':'')+diffCo+' EUR</div></div>';
+  }
 
   h+='<div class="inv-card"><div class="ic-title">Note / Reference</div>';
   h+='<textarea rows="3" style="resize:vertical;font-size:12px;padding:6px 8px;border-radius:7px;border:1.5px solid var(--border2);width:100%;outline:none;font-family:var(--font)" onchange="saveInv('+page+',\'note\',this.value)" placeholder="Invoice ref, notes..">'+(inv.note||'')+'</textarea></div>';
@@ -1043,6 +1096,10 @@ function saveInvHM(page,val){
   S.cc[page].inv.hm=+hm.toFixed(2);
   S.cc[page].inv.hrs=+(hm*160).toFixed(1);
   render();
+}
+function saveInvCo(page,coId,val){
+  S.cc[page].inv['amt_'+coId]=+(parseFloat(val)||0).toFixed(0);
+  saveS();
 }
 
 /* ============================================================
@@ -1691,6 +1748,77 @@ function renderWorkersPage(){
     html+='</tr>';
   }
   html+='</tbody></table></div>';
+
+  /* Bottom totals */
+  html+='<div class="bot-recap">';
+  html+='<div class="bot-title">Coverage Summary</div>';
+  html+='<table class="bot-table" style="width:100%">';
+  html+='<thead><tr><th>Category</th><th>Total Need (workers)</th><th>Assigned</th><th>Gap</th>';
+  for(var si=0;si<SPECS.length-1;si++) html+='<th>'+SPECS[si].label+' Need / Assigned</th>';
+  html+='</tr></thead><tbody>';
+
+  /* Overall */
+  var totNeed=0,totAss=0;
+  var specNeed={},specAss={};
+  for(var si=0;si<SPECS.length-1;si++){specNeed[SPECS[si].key]=0;specAss[SPECS[si].key]=0;}
+  for(var wi2=0;wi2<S.wbs.length;wi2++){
+    var wbs2=S.wbs[wi2];
+    for(var m2=0;m2<NM;m2++){
+      var bh=bud(wbs2,m2);
+      if(bh<=0) continue;
+      var need=Math.ceil(bh);
+      totNeed+=need;
+      totAss+=getWBSWorkers(wbs2.id,m2).length;
+      /* by specialty */
+      var sp2=wbs2.spec;
+      if(specNeed[sp2]!==undefined) specNeed[sp2]+=need;
+      if(specAss[sp2]!==undefined) specAss[sp2]+=getWBSWorkers(wbs2.id,m2).length;
+    }
+  }
+  var totGap=totAss-totNeed;
+  var totGapCls=totGap<0?'color:var(--red)':totGap>0?'color:var(--ora)':'color:var(--green)';
+  html+='<tr style="font-weight:700;background:var(--bg2)">';
+  html+='<td>All WBS (all months)</td>';
+  html+='<td>'+totNeed+'</td><td>'+totAss+'</td>';
+  html+='<td style="'+totGapCls+'">'+(totGap>0?'+':'')+totGap+'</td>';
+  for(var si=0;si<SPECS.length-1;si++){
+    var sk=SPECS[si].key;
+    var sg=specAss[sk]-specNeed[sk];
+    var sgcls=sg<0?'color:var(--red)':sg>0?'color:var(--ora)':'color:var(--green)';
+    html+='<td>'+specNeed[sk]+' / '+specAss[sk]+'<br><span style="font-size:10px;'+sgcls+'">'+(sg>0?'+':'')+sg+'</span></td>';
+  }
+  html+='</tr>';
+
+  /* Per month breakdown */
+  for(var m3=0;m3<NM;m3++){
+    var mNeed=0,mAss=0; var mSpecN={},mSpecA={};
+    for(var si=0;si<SPECS.length-1;si++){mSpecN[SPECS[si].key]=0;mSpecA[SPECS[si].key]=0;}
+    for(var wi3=0;wi3<S.wbs.length;wi3++){
+      var bh3=bud(S.wbs[wi3],m3);
+      if(bh3<=0) continue;
+      var need3=Math.ceil(bh3);
+      mNeed+=need3;
+      mAss+=getWBSWorkers(S.wbs[wi3].id,m3).length;
+      var sp3=S.wbs[wi3].spec;
+      if(mSpecN[sp3]!==undefined) mSpecN[sp3]+=need3;
+      if(mSpecA[sp3]!==undefined) mSpecA[sp3]+=getWBSWorkers(S.wbs[wi3].id,m3).length;
+    }
+    if(mNeed===0&&mAss===0) continue;
+    var mGap=mAss-mNeed;
+    var mGapCls=mGap<0?'color:var(--red)':mGap>0?'color:var(--ora)':'color:var(--green)';
+    html+='<tr>';
+    html+='<td>'+MS[m3]+'</td><td>'+mNeed+'</td><td>'+mAss+'</td>';
+    html+='<td style="'+mGapCls+'">'+(mGap>0?'+':'')+mGap+'</td>';
+    for(var si=0;si<SPECS.length-1;si++){
+      var sk2=SPECS[si].key;
+      var sg2=mSpecA[sk2]-mSpecN[sk2];
+      var sg2cls=sg2<0?'color:var(--red)':sg2>0?'color:var(--ora)':'color:var(--green)';
+      html+='<td>'+mSpecN[sk2]+' / '+mSpecA[sk2]+'<br><span style="font-size:10px;'+sg2cls+'">'+(sg2>0?'+':'')+sg2+'</span></td>';
+    }
+    html+='</tr>';
+  }
+  html+='</tbody></table></div>';
+
   document.getElementById('pageContent').innerHTML=html;
 }
 
@@ -1786,6 +1914,77 @@ function renderAssignmentsPage(){
     }
   }
   html+='</tbody></table></div>';
+
+  /* Bottom totals */
+  html+='<div class="bot-recap">';
+  html+='<div class="bot-title">Coverage Summary</div>';
+  html+='<table class="bot-table" style="width:100%">';
+  html+='<thead><tr><th>Category</th><th>Total Need (workers)</th><th>Assigned</th><th>Gap</th>';
+  for(var si=0;si<SPECS.length-1;si++) html+='<th>'+SPECS[si].label+' Need / Assigned</th>';
+  html+='</tr></thead><tbody>';
+
+  /* Overall */
+  var totNeed=0,totAss=0;
+  var specNeed={},specAss={};
+  for(var si=0;si<SPECS.length-1;si++){specNeed[SPECS[si].key]=0;specAss[SPECS[si].key]=0;}
+  for(var wi2=0;wi2<S.wbs.length;wi2++){
+    var wbs2=S.wbs[wi2];
+    for(var m2=0;m2<NM;m2++){
+      var bh=bud(wbs2,m2);
+      if(bh<=0) continue;
+      var need=Math.ceil(bh);
+      totNeed+=need;
+      totAss+=getWBSWorkers(wbs2.id,m2).length;
+      /* by specialty */
+      var sp2=wbs2.spec;
+      if(specNeed[sp2]!==undefined) specNeed[sp2]+=need;
+      if(specAss[sp2]!==undefined) specAss[sp2]+=getWBSWorkers(wbs2.id,m2).length;
+    }
+  }
+  var totGap=totAss-totNeed;
+  var totGapCls=totGap<0?'color:var(--red)':totGap>0?'color:var(--ora)':'color:var(--green)';
+  html+='<tr style="font-weight:700;background:var(--bg2)">';
+  html+='<td>All WBS (all months)</td>';
+  html+='<td>'+totNeed+'</td><td>'+totAss+'</td>';
+  html+='<td style="'+totGapCls+'">'+(totGap>0?'+':'')+totGap+'</td>';
+  for(var si=0;si<SPECS.length-1;si++){
+    var sk=SPECS[si].key;
+    var sg=specAss[sk]-specNeed[sk];
+    var sgcls=sg<0?'color:var(--red)':sg>0?'color:var(--ora)':'color:var(--green)';
+    html+='<td>'+specNeed[sk]+' / '+specAss[sk]+'<br><span style="font-size:10px;'+sgcls+'">'+(sg>0?'+':'')+sg+'</span></td>';
+  }
+  html+='</tr>';
+
+  /* Per month breakdown */
+  for(var m3=0;m3<NM;m3++){
+    var mNeed=0,mAss=0; var mSpecN={},mSpecA={};
+    for(var si=0;si<SPECS.length-1;si++){mSpecN[SPECS[si].key]=0;mSpecA[SPECS[si].key]=0;}
+    for(var wi3=0;wi3<S.wbs.length;wi3++){
+      var bh3=bud(S.wbs[wi3],m3);
+      if(bh3<=0) continue;
+      var need3=Math.ceil(bh3);
+      mNeed+=need3;
+      mAss+=getWBSWorkers(S.wbs[wi3].id,m3).length;
+      var sp3=S.wbs[wi3].spec;
+      if(mSpecN[sp3]!==undefined) mSpecN[sp3]+=need3;
+      if(mSpecA[sp3]!==undefined) mSpecA[sp3]+=getWBSWorkers(S.wbs[wi3].id,m3).length;
+    }
+    if(mNeed===0&&mAss===0) continue;
+    var mGap=mAss-mNeed;
+    var mGapCls=mGap<0?'color:var(--red)':mGap>0?'color:var(--ora)':'color:var(--green)';
+    html+='<tr>';
+    html+='<td>'+MS[m3]+'</td><td>'+mNeed+'</td><td>'+mAss+'</td>';
+    html+='<td style="'+mGapCls+'">'+(mGap>0?'+':'')+mGap+'</td>';
+    for(var si=0;si<SPECS.length-1;si++){
+      var sk2=SPECS[si].key;
+      var sg2=mSpecA[sk2]-mSpecN[sk2];
+      var sg2cls=sg2<0?'color:var(--red)':sg2>0?'color:var(--ora)':'color:var(--green)';
+      html+='<td>'+mSpecN[sk2]+' / '+mSpecA[sk2]+'<br><span style="font-size:10px;'+sg2cls+'">'+(sg2>0?'+':'')+sg2+'</span></td>';
+    }
+    html+='</tr>';
+  }
+  html+='</tbody></table></div>';
+
   document.getElementById('pageContent').innerHTML=html;
 }
 
@@ -1955,6 +2154,43 @@ function saveWorkerModal(id){
   render();
 }
 
+
+/* ============================================================
+   SUGGESTIONS
+   ============================================================ */
+function toggleSug(){
+  var p=document.getElementById('sugPanel');
+  p.style.display=p.style.display==='block'?'none':'block';
+  if(p.style.display==='block') renderSugList();
+}
+function renderSugList(){
+  var list=document.getElementById('sugList');
+  if(!list) return;
+  var items=S.suggestions||[];
+  if(!items.length){list.innerHTML='<div style="font-size:11px;color:var(--tx3);padding:6px 0">No suggestions yet.</div>';return;}
+  var h='';
+  for(var i=items.length-1;i>=0;i--){
+    h+='<div class="sug-item"><span>'+items[i].text+'<br><span style="font-size:10px;color:var(--tx3)">'+items[i].date+'</span></span>';
+    h+='<span class="sug-del" onclick="delSug('+i+')">&#128465;</span></div>';
+  }
+  list.innerHTML=h;
+}
+function submitSug(){
+  var txt=document.getElementById('sugText').value.trim();
+  if(!txt) return;
+  if(!S.suggestions) S.suggestions=[];
+  var now=new Date();
+  S.suggestions.push({text:txt,date:now.getDate()+'/'+(now.getMonth()+1)+'/'+now.getFullYear()});
+  document.getElementById('sugText').value='';
+  saveS();
+  renderSugList();
+}
+function delSug(idx){
+  if(!S.suggestions) return;
+  S.suggestions.splice(idx,1);
+  saveS();
+  renderSugList();
+}
 /* ============================================================
    EXPORT
    ============================================================ */
@@ -1985,5 +2221,16 @@ document.addEventListener('DOMContentLoaded', function(){
   initFirebase(); /* Then connect to Firebase */
 });
 </script>
+
+<button class="sug-fab" onclick="toggleSug()" title="Suggestions">&#128161;</button>
+<div class="sug-panel" id="sugPanel">
+  <h4>&#128161; Suggestions & Improvements</h4>
+  <textarea id="sugText" placeholder="Describe your suggestion..."></textarea>
+  <div style="display:flex;justify-content:flex-end;margin-top:8px;gap:6px;">
+    <button class="btn" onclick="toggleSug()">Close</button>
+    <button class="btn pri" onclick="submitSug()">Add</button>
+  </div>
+  <div class="sug-list" id="sugList"></div>
+</div>
 </body>
 </html>
