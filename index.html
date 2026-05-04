@@ -94,7 +94,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--font);font-size:13px
 .cl-dot{width:9px;height:9px;border-radius:3px;flex-shrink:0;}
 
 /* TABLE */
-.tw{overflow:auto;flex:1;padding:0 16px 16px;}
+.tw{overflow:auto;flex:1;padding:0 16px 16px;position:relative;}
 table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;margin-top:8px;border-radius:10px;overflow:hidden;}
 .p1{position:sticky;left:0;z-index:12;background:inherit;}
 .p2{position:sticky;left:260px;z-index:12;background:inherit;}
@@ -124,9 +124,10 @@ th.p1,td.p1{background:var(--bg2);}
 .rre td.p5{background:#f3f8f4!important;}
 .rvar td.p5{background:#f8f6f2!important;}
 .rwbs td.p5{background:var(--white)!important;}
-thead tr{background:var(--bg2);}
-th{padding:0 8px;height:33px;text-align:center;font-family:var(--font);font-size:10px;font-weight:700;color:var(--tx3);border-bottom:2px solid var(--border2);border-right:1px solid var(--border);white-space:nowrap;letter-spacing:.05em;text-transform:uppercase;user-select:none;background:var(--bg2);}
-th.p1{text-align:left;}
+thead tr{background:var(--bg2);position:sticky;top:0;z-index:20;}
+th::after{content:'';position:absolute;left:0;right:0;bottom:-1px;border-bottom:2px solid var(--border2);pointer-events:none;}
+th{padding:0 8px;height:33px;text-align:center;font-family:var(--font);font-size:10px;font-weight:700;color:var(--tx3);border-bottom:2px solid var(--border2);border-right:1px solid var(--border);white-space:nowrap;letter-spacing:.05em;text-transform:uppercase;user-select:none;background:var(--bg2);position:sticky;top:0;z-index:15;}
+th.p1{text-align:left;z-index:25!important;}
 th.col-past{color:var(--tx3);}
 th.col-cur{background:var(--pl);color:var(--pur);border-bottom-color:var(--pur);}
 th.col-rad{background:var(--ol);color:var(--ora);border-bottom-color:var(--ora);}
@@ -711,6 +712,11 @@ function filterW(pid){return S.wbs.filter(function(w){return w.parentId===pid;})
    ============================================================ */
 var VIEW='budget';
 function render(){
+  /* Preserve scroll position across re-renders */
+  var tw=document.querySelector('.tw');
+  var _sx=tw?tw.scrollLeft:0, _sy=tw?tw.scrollTop:0;
+  var _wx=window.scrollX||0, _wy=window.scrollY||0;
+
   applySettings();
   if(!document.getElementById('tabBar')) return;
   renderTabBar();renderTopbarR();
@@ -720,6 +726,13 @@ function render(){
   else renderCCPage(VIEW);
   saveS();
   wireInvNav();
+
+  /* Restore scroll after DOM rebuild */
+  setTimeout(function(){
+    var tw2=document.querySelector('.tw');
+    if(tw2){tw2.scrollLeft=_sx; tw2.scrollTop=_sy;}
+    if(_wx||_wy) window.scrollTo(_wx,_wy);
+  },0);
 }
 /* Wire Tab/Enter navigation on invoice inputs */
 function wireInvNav(){
@@ -1420,8 +1433,11 @@ function openInput(td,val,borderCol,onSave){
   }
 
   function openCell(targetTd){
-    /* Save current cell first (no render), then open target */
+    /* Save current, update display of current td in-place, open next */
     saveValue();
+    /* Update the text of the current td so the value is visible */
+    var savedV=readCellVal(td);
+    td.innerHTML=savedV?savedV.toFixed(1):'';
     var nval=readCellVal(targetTd);
     var nBorder=borderForType(targetTd.dataset.type);
     openInput(targetTd,nval,nBorder,function(v2){writeCellVal(targetTd,v2);});
@@ -1480,9 +1496,12 @@ function openInput(td,val,borderCol,onSave){
     setTimeout(function(){
       if(committed) return;
       var active=document.activeElement;
-      /* If focus moved to another edt input, don't render — nav is handling it */
       if(active&&active.closest&&active.closest('td.edt')) return;
-      saveValue(); render();
+      /* Leaving the table entirely: save, update display in-place, then render */
+      saveValue();
+      var dv=readCellVal(td);
+      td.innerHTML=dv?dv.toFixed(1):'';
+      render();
     },30);
   });
 }
