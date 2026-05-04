@@ -1366,14 +1366,43 @@ function renderBotRecap(page){
 /* Collect all editable cells in current table */
 function getEdtCells(){return Array.prototype.slice.call(document.querySelectorAll('td.edt'));}
 
-/* ---- Keyboard nav: save data immediately, open next cell, render at the end ---- */
-var NAV_ACTIVE=false; /* suppress render() during cell-to-cell navigation */
+/* ---- clipboard for copy-paste between cells ---- */
+var CELL_CLIPBOARD=null;
+
+/* Read current saved value for a td.edt cell from S */
+function readCellVal(td){
+  var wid=td.dataset.wid, type=td.dataset.type, mi=+td.dataset.m;
+  if(type==='bud'){
+    for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wid) return wbsBudAtSlot(S.wbs[i],mi);
+  } else if(type==='cc-reel'){
+    return reelAtSlot({id:wid},mi);
+  } else if(type==='cc-rad'){
+    return radAtSlot({id:wid},mi);
+  }
+  return 0;
+}
+
+/* Write a value for a td.edt cell into S (no render) */
+function writeCellVal(td,v){
+  var wid=td.dataset.wid, type=td.dataset.type, mi=+td.dataset.m;
+  if(type==='bud'){
+    for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wid){setBudSlot(S.wbs[i],mi,v);break;}
+  } else if(type==='cc-reel'){
+    ccSlot(mi).reel[wid]=v;
+  } else if(type==='cc-rad'){
+    ccSlot(mi).rad[wid]=v;
+  }
+}
+
+function borderForType(type){
+  return type==='bud'?'var(--blue)':type==='cc-reel'?'var(--pur)':'var(--ora)';
+}
 
 function openInput(td,val,borderCol,onSave){
   if(td.querySelector('input')) return;
   td.innerHTML='';
   var inp=document.createElement('input');
-  inp.type='number'; inp.step='0.1'; inp.min='0'; inp.value=(val||'');
+  inp.type='number'; inp.step='0.1'; inp.min='0'; inp.value=(val!=null&&val!==''?val:'');
   inp.style.cssText='width:100%;background:rgba(61,90,128,.08);border:1.5px solid '+borderCol+
     ';border-radius:3px;padding:2px 4px;font-family:var(--mono);font-size:11px;'+
     'color:var(--tx);text-align:right;outline:none;';
@@ -1383,78 +1412,105 @@ function openInput(td,val,borderCol,onSave){
   var committed=false;
 
   function saveValue(){
-    if(committed) return;
+    if(committed) return true;
     committed=true;
     var v=parseFloat(inp.value);
-    onSave(isNaN(v)?0:+v.toFixed(1)); /* writes to S, does NOT call render */
+    onSave(isNaN(v)?0:+v.toFixed(1));
+    return true;
   }
 
-  function moveToNext(){
-    /* Find next edt cell BEFORE we change anything */
-    var cells=getEdtCells();
-    var idx=cells.indexOf(td);
-    var nextTd=(idx>=0&&idx<cells.length-1)?cells[idx+1]:null;
+  function openCell(targetTd){
+    /* Save current cell first (no render), then open target */
     saveValue();
-    if(nextTd){
-      /* Open next cell directly — no render needed */
-      var nwid=nextTd.dataset.wid;
-      var nkey=nextTd.dataset.key;
-      var ntype=nextTd.dataset.type;
-      var nm=nextTd.dataset.m;
-      var nval=0;
-      /* Read current value from S */
-      if(ntype==='bud'){
-        for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===nwid){nval=S.wbs[i].data[nkey]||0;break;}
-      } else if(ntype==='cc-reel'){
-        nval=S.cc[+nm].reel[nwid]||0;
-      } else if(ntype==='cc-rad'){
-        var rv=S.cc[+nm].rad[nwid];
-        if(rv===undefined){for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===nwid){nval=S.wbs[i].data['b'+nm]||0;break;}}
-        else nval=rv;
-      }
-      /* Compute border color for next cell */
-      var nBorder=ntype==='bud'?'var(--blue)':ntype==='cc-reel'?'var(--pur)':'var(--ora)';
-      openInput(nextTd,nval,nBorder,function(v2){
-        /* onSave for next cell — same pattern */
-        if(ntype==='bud'){for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===nwid){S.wbs[i].data[nkey]=v2;break;}}
-        else if(ntype==='cc-reel') S.cc[+nm].reel[nwid]=v2;
-        else if(ntype==='cc-rad') S.cc[+nm].rad[nwid]=v2;
-      });
-    } else {
-      /* No next cell — end of navigation, now render */
-      render();
-    }
+    var nval=readCellVal(targetTd);
+    var nBorder=borderForType(targetTd.dataset.type);
+    openInput(targetTd,nval,nBorder,function(v2){writeCellVal(targetTd,v2);});
   }
 
   inp.addEventListener('keydown',function(e){
-    if(e.key==='Enter'||e.key==='Tab'){
+    if(e.key==='Tab'||e.key==='Enter'){
       e.preventDefault(); e.stopPropagation();
-      moveToNext();
+      var cells=getEdtCells();
+      var idx=cells.indexOf(td);
+      /* Tab: right (forward). Shift+Tab: left (backward). Enter: right. */
+      var dir=(e.shiftKey&&e.key==='Tab')?-1:1;
+      var next=cells[idx+dir];
+      if(next){
+        openCell(next);
+      } else {
+        saveValue();
+        render();
+      }
+      return;
+    }
+    /* Ctrl/Cmd + C: copy cell value to clipboard */
+    if((e.ctrlKey||e.metaKey)&&e.key==='c'){
+      CELL_CLIPBOARD=parseFloat(inp.value)||0;
+      /* flash border green to confirm */
+      inp.style.borderColor='var(--green)';
+      setTimeout(function(){inp.style.borderColor=borderCol;},400);
+      return;
+    }
+    /* Ctrl/Cmd + V: paste clipboard value */
+    if((e.ctrlKey||e.metaKey)&&e.key==='v'&&CELL_CLIPBOARD!==null){
+      e.preventDefault();
+      inp.value=CELL_CLIPBOARD;
+      inp.select();
+      return;
     }
     if(e.key==='Escape'){committed=true; render();}
   });
+
+  /* Right-click context menu on td for copy/paste */
+  td.oncontextmenu=function(e){
+    e.preventDefault();
+    /* save current value silently */
+    var curV=parseFloat(inp.value)||0;
+    writeCellVal(td,curV);
+    CELL_CLIPBOARD=curV;
+    /* show tiny toast */
+    var t=document.createElement('div');
+    t.textContent='Copied: '+curV;
+    t.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1e1b18;color:#fff;padding:6px 14px;border-radius:20px;font-size:12px;z-index:9999;pointer-events:none;opacity:1;transition:opacity .4s';
+    document.body.appendChild(t);
+    setTimeout(function(){t.style.opacity='0';setTimeout(function(){t.remove();},400);},800);
+  };
+
   inp.addEventListener('blur',function(){
-    /* blur fires when focus moves to next cell input — only render if not moving to another edt */
     setTimeout(function(){
+      if(committed) return;
       var active=document.activeElement;
-      var inEdt=active&&active.closest&&active.closest('td.edt');
-      if(!inEdt){saveValue(); render();}
-    },0);
+      /* If focus moved to another edt input, don't render — nav is handling it */
+      if(active&&active.closest&&active.closest('td.edt')) return;
+      saveValue(); render();
+    },30);
   });
 }
 
 function ecBud(td,wid,m,cur){
   var w=null;for(var i=0;i<S.wbs.length;i++){if(S.wbs[i].id===wid){w=S.wbs[i];break;}}if(!w)return;
-  openInput(td,cur,'var(--blue)',function(v){setBudSlot(w,m,v);render();});
+  openInput(td,cur,'var(--blue)',function(v){setBudSlot(w,m,v);});
 }
 
 function ecCC(td,wid,m,type,cur){
   var borderCol=type==='reel'?'var(--pur)':'var(--ora)';
   openInput(td,cur,borderCol,function(v){
     if(type==='reel')ccSlot(m).reel[wid]=v;
-    else S.cc[m].rad[wid]=v;
+    else ccSlot(m).rad[wid]=v;
   });
 }
+
+/* Paste clipboard to any edt cell by clicking it while holding Alt */
+document.addEventListener('click',function(e){
+  if(!e.altKey) return;
+  var td=e.target.closest('td.edt');
+  if(!td||CELL_CLIPBOARD===null) return;
+  e.preventDefault(); e.stopPropagation();
+  writeCellVal(td,CELL_CLIPBOARD);
+  /* flash */
+  td.style.background='rgba(58,125,84,.25)';
+  setTimeout(function(){td.style.background='';render();},200);
+},true);
 
 /* ============================================================
    COLLAPSE / DRAG
