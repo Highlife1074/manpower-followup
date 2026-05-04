@@ -488,19 +488,37 @@ function buildML(){
 }
 
 /* Key for storing data: 'y2025m3' */
-function mkey(i){return 'y'+ML[i].year+'m'+ML[i].month;}
+function mkey(i){
+  if(ML&&ML[i]) return 'y'+ML[i].year+'m'+ML[i].month;
+  /* fallback when ML not yet built: use start year + month index */
+  var sy=S&&S.settings?S.settings.startYear||S.settings.year||2025:2025;
+  var sm=S&&S.settings?S.settings.startMonth||0:0;
+  var mo=sm+i; var yr=sy;
+  while(mo>11){mo-=12;yr++;}
+  return 'y'+yr+'m'+mo;
+}
 
-/* Legacy compat: if data stored as b0..b11 migrate to mkey */
+/* Legacy compat: data may be stored as b0..b11 (old) or y2025m3 (new) */
 function wbsBudAtSlot(w,i){
-  var k=mkey(i); if(w.data[k]!==undefined) return+(w.data[k]||0);
-  /* fallback for old data with same year */
-  if(ML[i].year===S.settings.startYear||ML[i].year===(S.settings.year||2025)){
+  var k=mkey(i);
+  if(w.data[k]!==undefined) return+(w.data[k]||0);
+  /* Try legacy key b<index> (original 12-month single year) */
+  if(w.data['b'+i]!==undefined) return+(w.data['b'+i]||0);
+  /* Try legacy key b<month> if same year */
+  if(ML&&ML[i]){
     var legacy=w.data['b'+ML[i].month];
-    return legacy!==undefined?+(legacy||0):0;
+    if(legacy!==undefined) return+(legacy||0);
   }
   return 0;
 }
-function setBudSlot(w,i,v){w.data[mkey(i)]=v;}
+function setBudSlot(w,i,v){
+  /* Always write with mkey — also clear legacy key to avoid double-read */
+  var k=mkey(i);
+  w.data[k]=v;
+  /* Clear old legacy keys so re-render reads the new value */
+  delete w.data['b'+i];
+  if(ML&&ML[i]) delete w.data['b'+ML[i].month];
+}
 
 /* CC data by slot */
 function ccSlot(i){
@@ -1427,7 +1445,7 @@ function openInput(td,val,borderCol,onSave){
 
 function ecBud(td,wid,m,cur){
   var w=null;for(var i=0;i<S.wbs.length;i++){if(S.wbs[i].id===wid){w=S.wbs[i];break;}}if(!w)return;
-  openInput(td,cur,'var(--blue)',function(v){w.data['b'+m]=v;});
+  openInput(td,cur,'var(--blue)',function(v){setBudSlot(w,m,v);render();});
 }
 
 function ecCC(td,wid,m,type,cur){
