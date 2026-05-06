@@ -283,6 +283,16 @@ tr.dragging{opacity:.3;} tr.dov td{border-top:2px solid var(--blue)!important;}
 .wk-table td{padding:5px 10px;border:1px solid var(--border);vertical-align:middle;white-space:nowrap;}
 .wk-table tr:nth-child(even) td{background:#f8f6f2;}
 .wk-table tr:hover td{background:var(--bg2);}
+.wk-table tr.wk-selected td{background:#eaf0f7!important;}
+.wk-table tr.wk-selected:hover td{background:#d8e8f4!important;}
+.wk-sel-bar{display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--blue);color:#fff;font-size:12px;font-weight:600;flex-shrink:0;animation:slideDown .15s ease;}
+@keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.wk-sel-bar .scount{background:rgba(255,255,255,.25);border-radius:20px;padding:2px 10px;font-family:var(--mono);}
+.wk-sel-bar .btn{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;font-size:11px;}
+.wk-sel-bar .btn:hover{background:rgba(255,255,255,.3);}
+.wk-sel-bar .btn.danger{background:rgba(168,64,64,.6);border-color:rgba(255,150,150,.4);}
+.wk-sel-bar .btn.danger:hover{background:rgba(168,64,64,.9);}
+input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 
 /* Status badges */
 .sb{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;}
@@ -342,22 +352,34 @@ tr.dragging{opacity:.3;} tr.dov td{border-top:2px solid var(--blue)!important;}
 .sug-item .sug-del:hover{color:var(--red);}
 
 /* Worker assignment modal */
-.wk-pick-modal{background:var(--white);border-radius:14px;padding:20px 24px;width:640px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2);}
-.wk-pick-modal h3{font-size:14px;font-weight:700;margin-bottom:4px;}
-.wk-pick-modal .subtitle{font-size:11px;color:var(--tx3);margin-bottom:14px;}
-.wk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;overflow-y:auto;flex:1;padding-right:4px;}
-.wk-card{border:2px solid var(--border2);border-radius:9px;padding:9px 12px;cursor:pointer;transition:all .14s;position:relative;}
-.wk-card:hover{border-color:var(--blue);background:var(--bl);}
-.wk-card.assigned{border-color:var(--red);background:var(--rl);cursor:default;opacity:.8;}
-.wk-card.assigned:hover{border-color:var(--red);background:var(--rl);}
-.wk-card.available{border-color:var(--border2);background:var(--white);}
-.wk-card .wc-name{font-weight:700;font-size:12px;color:var(--tx);}
-.wk-card .wc-meta{font-size:10px;color:var(--tx3);margin-top:2px;}
-.wk-card .wc-badge{position:absolute;top:6px;right:6px;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;}
-.wc-badge.av{background:var(--gl);color:var(--green);}
-.wc-badge.as{background:var(--rl);color:var(--red);}
-.wc-badge.oo{background:var(--bg2);color:var(--tx3);}
-.wk-pick-fm{display:flex;align-items:center;gap:8px;padding:10px 0 6px;border-top:1px solid var(--border);margin-top:10px;font-size:12px;}
+.wk-pick-modal{background:var(--white);border-radius:16px;padding:0;width:min(900px,95vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.22);overflow:hidden;}
+.wk-pick-header{padding:20px 24px 14px;border-bottom:1px solid var(--border2);flex-shrink:0;}
+.wk-pick-header h3{font-size:16px;font-weight:800;color:var(--tx);margin-bottom:4px;}
+.wk-pick-header .subtitle{font-size:12px;color:var(--tx3);}
+.wk-pick-filters{display:flex;gap:8px;align-items:center;padding:10px 24px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap;}
+.wk-pick-filters input[type=text]{padding:5px 10px;border:1.5px solid var(--border2);border-radius:7px;font-size:12px;font-family:var(--font);outline:none;width:180px;}
+.wk-pick-filters input[type=text]:focus{border-color:var(--blue);}
+.wk-pick-legend{display:flex;gap:12px;align-items:center;font-size:11px;font-weight:600;}
+.wk-pick-legend span{display:flex;align-items:center;gap:4px;}
+.wk-pick-legend .ldot{width:10px;height:10px;border-radius:3px;display:inline-block;}
+.wk-pick-body{overflow-y:auto;flex:1;padding:16px 24px;}
+.wk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;}
+.wk-card{border:2px solid var(--border2);border-radius:10px;padding:11px 14px;cursor:pointer;transition:border .13s,background .13s,transform .1s;position:relative;}
+.wk-card:hover{border-color:var(--blue);background:var(--bl);transform:translateY(-1px);}
+.wk-card.wc-staged{border-color:var(--green)!important;background:var(--gl)!important;}
+.wk-card.wc-remove{border-color:var(--red)!important;background:var(--rl)!important;}
+.wk-card.wc-elsewhere{border-color:var(--red);background:var(--rl);cursor:not-allowed;opacity:.75;}
+.wk-card.wc-elsewhere:hover{transform:none;border-color:var(--red);background:var(--rl);}
+.wk-card.wc-out{opacity:.4;cursor:not-allowed;background:var(--bg2);}
+.wk-card.wc-out:hover{transform:none;border-color:var(--border2);background:var(--bg2);}
+.wk-card .wc-name{font-weight:700;font-size:12px;color:var(--tx);margin-bottom:3px;}
+.wk-card .wc-meta{font-size:10px;color:var(--tx3);}
+.wk-card .wc-status{font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;display:inline-block;margin-top:5px;}
+.wk-card .wc-fm{font-size:10px;color:var(--amber);font-weight:700;margin-top:4px;}
+.wk-pick-footer{padding:14px 24px;border-top:1px solid var(--border2);display:flex;align-items:center;gap:10px;flex-shrink:0;background:var(--bg2);}
+.wk-pick-footer .fp-info{flex:1;font-size:12px;color:var(--tx2);}
+.wk-pick-footer .fp-info strong{color:var(--green);}
+.wk-pick-fm-wrap{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--tx2);}
 </style>
 </head>
 <body>
@@ -2326,10 +2348,21 @@ function renderWorkersPage(){
     return;
   }
 
+  /* Selection toolbar (hidden until items selected) */
+  html+='<div class="wk-sel-bar" id="wkSelBar" style="display:none">';
+  html+='<span class="scount" id="wkSelCount">0</span> selected';
+  html+='<button class="btn" onclick="wkSelectAll()">Select all</button>';
+  html+='<button class="btn" onclick="wkSelectNone()">Clear</button>';
+  html+='<button class="btn" onclick="wkSelectBySpec()">Same specialty</button>';
+  html+='<button class="btn" onclick="wkSelectExpired()">Expired contracts</button>';
+  html+='<button class="btn danger" onclick="wkDeleteSelected()">&#128465; Delete selected</button>';
+  html+='</div>';
+
   /* Workers table */
   html+='<div class="tw" style="overflow:auto;flex:1;">';
-  html+='<table class="wk-table">';
+  html+='<table class="wk-table" id="wkTable">';
   html+='<thead><tr>';
+  html+='<th style="width:32px;text-align:center"><input class="wk-cb" type="checkbox" id="wkCbAll" onchange="wkToggleAll(this)" title="Select all"></th>';
   html+='<th>ID</th><th>Name</th><th>Company</th><th>Specialty</th><th>Role</th>';
   html+='<th>Contract Start</th><th>Contract End</th><th>Revised End</th>';
   html+='<th>Status</th>';
@@ -2349,7 +2382,8 @@ function renderWorkersPage(){
     else if(gst==='exp') stBadge='<span class="sb sb-exp">&#128308; Expired</span>';
     else stBadge='<span class="sb sb-free">Available</span>';
 
-    html+='<tr>';
+    html+='<tr data-wid="'+wk.id+'">';
+    html+='<td style="text-align:center"><input class="wk-cb" type="checkbox" data-wid="'+wk.id+'" onchange="wkCbChange(this)"></td>';
     html+='<td style="font-family:var(--mono);font-size:10px;color:var(--tx3)">'+(wk.workerId||'—')+'</td>';
     html+='<td style="font-weight:600">'+wk.name+'</td>';
     html+='<td>'+coName+'</td>';
@@ -2470,6 +2504,116 @@ function deleteWorker(id){
   if(!confirm('Remove this worker and all their assignments?')) return;
   S.workers=S.workers.filter(function(w){return w.id!==id;});
   S.assignments=S.assignments.filter(function(a){return a.workerId!==id;});
+  render();
+}
+
+/* ---- Multi-select worker management ---- */
+var WK_SEL={}; /* {workerId: true} */
+
+function wkCbChange(cb){
+  var wid=cb.dataset.wid;
+  if(cb.checked) WK_SEL[wid]=true;
+  else delete WK_SEL[wid];
+  /* Highlight row */
+  var tr=cb.closest('tr');
+  if(tr) tr.classList.toggle('wk-selected',cb.checked);
+  wkUpdateBar();
+}
+
+function wkToggleAll(masterCb){
+  var cbs=document.querySelectorAll('.wk-table tbody input.wk-cb');
+  WK_SEL={};
+  cbs.forEach(function(cb){
+    cb.checked=masterCb.checked;
+    var tr=cb.closest('tr');
+    if(masterCb.checked){WK_SEL[cb.dataset.wid]=true;if(tr)tr.classList.add('wk-selected');}
+    else{if(tr)tr.classList.remove('wk-selected');}
+  });
+  wkUpdateBar();
+}
+
+function wkSelectAll(){
+  var cbs=document.querySelectorAll('.wk-table tbody input.wk-cb');
+  WK_SEL={};
+  cbs.forEach(function(cb){
+    cb.checked=true;
+    WK_SEL[cb.dataset.wid]=true;
+    var tr=cb.closest('tr');if(tr)tr.classList.add('wk-selected');
+  });
+  var all=document.getElementById('wkCbAll');if(all)all.checked=true;
+  wkUpdateBar();
+}
+
+function wkSelectNone(){
+  var cbs=document.querySelectorAll('.wk-table tbody input.wk-cb');
+  WK_SEL={};
+  cbs.forEach(function(cb){
+    cb.checked=false;
+    var tr=cb.closest('tr');if(tr)tr.classList.remove('wk-selected');
+  });
+  var all=document.getElementById('wkCbAll');if(all)all.checked=false;
+  wkUpdateBar();
+}
+
+function wkSelectBySpec(){
+  /* Select all workers with same specialty as any currently selected worker */
+  var specs={};
+  Object.keys(WK_SEL).forEach(function(wid){
+    var wk=getWorker(wid);if(wk)specs[wk.spec]=true;
+  });
+  if(!Object.keys(specs).length){showToast('Select at least one worker first','warn');return;}
+  WK_SEL={};
+  var cbs=document.querySelectorAll('.wk-table tbody input.wk-cb');
+  cbs.forEach(function(cb){
+    var wk=getWorker(cb.dataset.wid);
+    var match=wk&&specs[wk.spec];
+    cb.checked=!!match;
+    var tr=cb.closest('tr');
+    if(match){WK_SEL[cb.dataset.wid]=true;if(tr)tr.classList.add('wk-selected');}
+    else{if(tr)tr.classList.remove('wk-selected');}
+  });
+  wkUpdateBar();
+}
+
+function wkSelectExpired(){
+  WK_SEL={};
+  var cbs=document.querySelectorAll('.wk-table tbody input.wk-cb');
+  cbs.forEach(function(cb){
+    var wk=getWorker(cb.dataset.wid);
+    var exp=wk&&workerGlobalStatus(wk)==='exp';
+    cb.checked=!!exp;
+    var tr=cb.closest('tr');
+    if(exp){WK_SEL[cb.dataset.wid]=true;if(tr)tr.classList.add('wk-selected');}
+    else{if(tr)tr.classList.remove('wk-selected');}
+  });
+  wkUpdateBar();
+}
+
+function wkUpdateBar(){
+  var n=Object.keys(WK_SEL).length;
+  var bar=document.getElementById('wkSelBar');
+  var cnt=document.getElementById('wkSelCount');
+  if(bar) bar.style.display=n>0?'flex':'none';
+  if(cnt) cnt.textContent=n;
+  /* Update master checkbox state */
+  var all=document.getElementById('wkCbAll');
+  if(all){
+    var total=document.querySelectorAll('.wk-table tbody input.wk-cb').length;
+    all.indeterminate=(n>0&&n<total);
+    all.checked=(n>0&&n===total);
+  }
+}
+
+function wkDeleteSelected(){
+  var ids=Object.keys(WK_SEL);
+  if(!ids.length) return;
+  if(!confirm('Delete '+ids.length+' worker'+(ids.length>1?'s':'')+' and all their assignments?')) return;
+  var idSet={};ids.forEach(function(id){idSet[id]=true;});
+  S.workers=S.workers.filter(function(w){return !idSet[w.id];});
+  S.assignments=S.assignments.filter(function(a){return !idSet[a.workerId];});
+  WK_SEL={};
+  saveS();
+  showToast('Deleted '+ids.length+' worker'+(ids.length>1?'s':''),'ok');
   render();
 }
 
@@ -2635,89 +2779,225 @@ function openWP(el){openWorkerPicker(el,el.dataset.wbs,parseInt(el.dataset.m));}
 
 function openWorkerPicker(btn,wbsId,month){
   pickerOpen={wbsId:wbsId,month:month};
-  var slotYr=ML[month]?ML[month].year:YEAR;
-  var slotMo=ML[month]!==undefined?ML[month].month:month;
-  var slotLabel=ML[month]?ML[month].label:MS[month];
+  /* Staged changes: {workerId: 'add'|'remove'|'add-foreman'} */
+  var staged={};
 
-  /* Find WBS name */
-  var wbsName=''; for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wbsId){wbsName=S.wbs[i].name;break;}
-  /* Currently assigned workers on this WBS this slot */
-  var assignedHere=getWBSWorkers(wbsId,month).map(function(w){return w.id;});
+  function buildModal(filterText){
+    var slotYr=ML[month]?ML[month].year:YEAR;
+    var slotMo=ML[month]!==undefined?ML[month].month:month;
+    var slotLabel=ML[month]?ML[month].label:MS[month];
+    var ft=(filterText||'').toLowerCase();
 
-  var box=document.getElementById('mbox');
-  var h='<div class="wk-pick-modal">';
-  h+='<h3>Assign workers — '+wbsName+'</h3>';
-  h+='<div class="subtitle">'+slotLabel+' &nbsp;·&nbsp; Click a worker to assign &nbsp;·&nbsp; Red = already assigned elsewhere</div>';
+    /* WBS name */
+    var wbsName=''; var wbsBudMM=0;
+    for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wbsId){wbsName=S.wbs[i].name;wbsBudMM=wbsBudAtSlot(S.wbs[i],month);break;}
 
-  /* Foreman toggle */
-  h+='<div class="wk-pick-fm"><input type="checkbox" id="wpFm"><label for="wpFm" style="cursor:pointer;font-weight:600">&#9733; Assign as Foreman</label>';
-  h+='<span style="font-size:10px;color:var(--tx3);margin-left:8px">(one foreman per WBS per month)</span></div>';
+    /* Currently saved assignments */
+    var savedHere=getWBSWorkers(wbsId,month).map(function(w){return w.id;});
+    /* Effective after staged changes */
+    function effectivelyAssignedHere(wid){
+      if(staged[wid]==='remove') return false;
+      if(staged[wid]==='add'||staged[wid]==='add-foreman') return true;
+      return savedHere.indexOf(wid)>=0;
+    }
+    function effectivelyFree(wid){
+      if(staged[wid]==='add'||staged[wid]==='add-foreman') return false;
+      if(staged[wid]==='remove') return true;
+      var a=getAssignmentSlot(wid,month);
+      return !a;
+    }
 
-  /* Worker grid */
-  h+='<div class="wk-grid">';
-  for(var i=0;i<S.workers.length;i++){
-    var wk=S.workers[i];
-    var active=workerActiveInMonth(wk,slotMo,slotYr);
-    var asgn=getAssignmentSlot(wk.id,month);
-    var asgnHere=assignedHere.indexOf(wk.id)>=0;
-    var co=getCompany(wk.companyId); var coName=co?co.name:'';
-    var sl=specLabel(wk.spec);
+    /* Count effective assignments */
+    var effectiveCount=0;
+    var effectiveForemanId='';
+    for(var i=0;i<S.workers.length;i++){
+      if(effectivelyAssignedHere(S.workers[i].id)){
+        effectiveCount++;
+        /* check foreman */
+        if(staged[S.workers[i].id]==='add-foreman') effectiveForemanId=S.workers[i].id;
+        else{var fm2=getForeman(wbsId,month);if(fm2&&fm2.workerId===S.workers[i].id&&staged[S.workers[i].id]!=='remove')effectiveForemanId=S.workers[i].id;}
+      }
+    }
 
-    if(!active){
-      /* Outside contract — show greyed out */
-      h+='<div class="wk-card" style="opacity:.4;cursor:not-allowed;background:var(--bg2)">';
-      h+='<span class="wc-badge oo">Out of contract</span>';
+    var stagedCount=Object.keys(staged).length;
+    var box=document.getElementById('mbox');
+
+    var h='<div class="wk-pick-modal">';
+
+    /* Header */
+    h+='<div class="wk-pick-header">';
+    h+='<h3>&#128101; Assign Workers &mdash; '+wbsName+'</h3>';
+    h+='<div class="subtitle">'+slotLabel;
+    if(wbsBudMM>0) h+=' &nbsp;·&nbsp; Budget: <strong>'+wbsBudMM.toFixed(1)+' MM</strong> &nbsp;·&nbsp; Assigned: <strong style="color:var('+(effectiveCount>=Math.ceil(wbsBudMM)?'--green':'--red')+')">'+effectiveCount+'</strong>';
+    h+='</div>';
+    h+='</div>';
+
+    /* Filters + legend */
+    h+='<div class="wk-pick-filters">';
+    h+='<input type="text" id="wkPickFilter" placeholder="&#128269; Search by name, specialty..." value="'+ft+'" oninput="wkPickFilter(this.value)">';
+    h+='<div class="wk-pick-legend">';
+    h+='<span><span class="ldot" style="background:var(--green);border:2px solid var(--gm)"></span>Assigned here</span>';
+    h+='<span><span class="ldot" style="background:var(--rl);border:2px solid var(--red)"></span>Assigned elsewhere</span>';
+    h+='<span><span class="ldot" style="background:var(--bg2);border:2px solid var(--border2)"></span>Out of contract</span>';
+    h+='<span><span class="ldot" style="background:var(--white);border:2px solid var(--border2)"></span>Available</span>';
+    h+='</div>';
+    h+='<div class="wk-pick-fm-wrap">';
+    h+='<input type="checkbox" id="wpFm" style="width:15px;height:15px;accent-color:var(--amber)"><label for="wpFm" style="cursor:pointer">&#9733; Next assign = Foreman</label>';
+    h+='</div>';
+    h+='</div>';
+
+    /* Worker grid */
+    h+='<div class="wk-pick-body"><div class="wk-grid" id="wkPickGrid">';
+
+    /* Sort: assigned-here first, then available, then elsewhere, then out */
+    var workers=S.workers.slice();
+    workers.sort(function(a,b){
+      function rank(w){
+        if(effectivelyAssignedHere(w.id)) return 0;
+        var active=workerActiveInMonth(w,slotMo,slotYr);
+        if(!active) return 3;
+        var a2=getAssignmentSlot(w.id,month);
+        if(a2&&savedHere.indexOf(w.id)<0&&!staged[w.id]) return 2;
+        return 1;
+      }
+      return rank(a)-rank(b);
+    });
+
+    for(var i=0;i<workers.length;i++){
+      var wk=workers[i];
+      var active=workerActiveInMonth(wk,slotMo,slotYr);
+      var asgn=getAssignmentSlot(wk.id,month);
+      var asgnHere=effectivelyAssignedHere(wk.id);
+      var free=effectivelyFree(wk.id);
+      var co=getCompany(wk.companyId); var coName=co?co.name:'';
+      var sl=specLabel(wk.spec);
+
+      /* Apply filter */
+      if(ft){
+        var searchStr=(wk.name+' '+coName+' '+sl).toLowerCase();
+        if(searchStr.indexOf(ft)<0) continue;
+      }
+
+      var isFm=(effectiveForemanId===wk.id);
+      var stg=staged[wk.id]||'';
+
+      var cardCls='wk-card';
+      var statusHtml='';
+      var clickable=false;
+
+      if(!active){
+        cardCls+=' wc-out';
+        statusHtml='<span class="wc-status" style="background:var(--bg2);color:var(--tx3)">Out of contract</span>';
+      } else if(asgnHere){
+        cardCls+=' '+(stg==='remove'?'wc-remove':'wc-staged');
+        var lbl=stg==='remove'?'Click to re-add':'&#10003; Assigned'+(isFm?' &#9733; Foreman':'');
+        statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">'+lbl+'</span>';
+        if(stg==='remove') statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">Will be removed</span>';
+        clickable=true;
+      } else if(asgn&&!stg){
+        /* assigned elsewhere and no staged change */
+        var onWBS=''; for(var j=0;j<S.wbs.length;j++) if(S.wbs[j].id===asgn.wbsId){onWBS=S.wbs[j].name;break;}
+        cardCls+=' wc-elsewhere';
+        statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">On: '+onWBS+'</span>';
+      } else {
+        clickable=true;
+        if(stg==='add'||stg==='add-foreman'){
+          cardCls+=' wc-staged';
+          statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">'+(stg==='add-foreman'?'&#9733; Will be foreman':'Will be assigned')+'</span>';
+        } else {
+          statusHtml='<span class="wc-status" style="background:var(--bg2);color:var(--tx3)">Available</span>';
+        }
+      }
+
+      h+='<div class="'+cardCls+'" '+(clickable?'data-wid="'+wk.id+'" data-wbs="'+wbsId+'" data-m="'+month+'" onclick="wkPickToggle(this)"':'')+'>';
       h+='<div class="wc-name">'+wk.name+'</div>';
-      h+='<div class="wc-meta">'+(coName||'—')+(sl?' · '+sl:'')+'</div>';
-      h+='</div>';
-    } else if(asgn&&!asgnHere){
-      /* Assigned elsewhere */
-      var onWBS=''; for(var j=0;j<S.wbs.length;j++) if(S.wbs[j].id===asgn.wbsId){onWBS=S.wbs[j].name;break;}
-      h+='<div class="wk-card assigned">';
-      h+='<span class="wc-badge as">'+onWBS+'</span>';
-      h+='<div class="wc-name">'+wk.name+'</div>';
-      h+='<div class="wc-meta">'+(coName||'—')+(sl?' · '+sl:'')+'</div>';
-      h+='</div>';
-    } else if(asgnHere){
-      /* Already on this WBS — show as assigned (click to remove) */
-      var isFm=getForeman(wbsId,month)&&getForeman(wbsId,month).workerId===wk.id;
-      h+='<div class="wk-card" style="border-color:var(--green);background:var(--gl);cursor:pointer" data-wid="'+wk.id+'" data-m="'+month+'" onclick="remAssignFromModal(this)">';
-      h+='<span class="wc-badge av">'+(isFm?'★ Foreman':'Assigned')+'</span>';
-      h+='<div class="wc-name">'+wk.name+'</div>';
-      h+='<div class="wc-meta">'+(coName||'—')+(sl?' · '+sl:'')+'&nbsp;· Click to remove</div>';
-      h+='</div>';
-    } else {
-      /* Available */
-      h+='<div class="wk-card available" data-wid="'+wk.id+'" data-wbs="'+wbsId+'" data-m="'+month+'" onclick="doAssignFromModal(this)">';
-      h+='<div class="wc-name">'+wk.name+'</div>';
-      h+='<div class="wc-meta">'+(coName||'—')+(sl?' · '+sl:'')+'</div>';
+      h+='<div class="wc-meta">'+(coName||'—')+(sl?' · <span class="spsel sk-'+wk.spec+'" style="cursor:default;font-size:9px;padding:1px 5px">'+sl+'</span>':'')+'</div>';
+      h+=statusHtml;
       h+='</div>';
     }
+    h+='</div></div>'; /* end wk-grid + wk-pick-body */
+
+    /* Footer */
+    h+='<div class="wk-pick-footer">';
+    h+='<div class="fp-info">';
+    if(stagedCount>0) h+='<strong>'+stagedCount+' pending change'+(stagedCount>1?'s':'')+'</strong> — click Save to apply';
+    else h+='Click a worker to add or remove';
+    h+='</div>';
+    h+='<button class="btn" onclick="wkPickClose()">Cancel</button>';
+    h+='<button class="btn pri" onclick="wkPickSave()">&#10003; Save &amp; Close</button>';
+    h+='</div>';
+    h+='</div>'; /* end wk-pick-modal */
+
+    box.innerHTML=h;
+    document.getElementById('mbg').style.display='flex';
+    /* Restore filter focus */
+    if(ft){var f=document.getElementById('wkPickFilter');if(f){f.focus();f.setSelectionRange(ft.length,ft.length);}}
   }
-  h+='</div>'; /* end wk-grid */
-  h+='<div class="ma"><button class="btn" onclick="closeModal()">Close</button></div>';
-  h+='</div>';
 
-  box.innerHTML=h;
-  document.getElementById('mbg').style.display='flex';
+  /* Public: toggle a worker card */
+  window._wkPickStaged=staged;
+  window._wkPickRebuild=buildModal;
+
+  buildModal('');
 }
 
-function remAssignFromModal(el){
-  var wid=el.dataset.wid; var m=parseInt(el.dataset.m);
-  if(!confirm('Remove this worker from this month?')) return;
-  var rYr=ML[m]?ML[m].year:YEAR;
-  var rMo=ML[m]!==undefined?ML[m].month:m;
-  S.assignments=S.assignments.filter(function(a){return !(a.workerId===wid&&a.month===rMo&&a.year===rYr);});
-  /* Re-open picker to show updated state */
-  openWorkerPicker(null,pickerOpen.wbsId,pickerOpen.month);
-}
-function doAssignFromModal(el){
-  var workerId=el.dataset.wid,wbsId=el.dataset.wbs,month=parseInt(el.dataset.m);
+function wkPickToggle(el){
+  var wid=el.dataset.wid;
+  var staged=window._wkPickStaged;
+  var savedHere=getWBSWorkers(pickerOpen.wbsId,pickerOpen.month).map(function(w){return w.id;});
+  var isSavedHere=savedHere.indexOf(wid)>=0;
   var isFm=document.getElementById('wpFm')&&document.getElementById('wpFm').checked;
-  assignWorker(workerId,wbsId,month,isFm);
-  openWorkerPicker(null,wbsId,month);
+
+  if(isSavedHere){
+    /* Toggle remove */
+    if(staged[wid]==='remove') delete staged[wid];
+    else staged[wid]='remove';
+  } else {
+    /* Toggle add */
+    if(staged[wid]==='add'||staged[wid]==='add-foreman') delete staged[wid];
+    else staged[wid]=isFm?'add-foreman':'add';
+  }
+  /* Rebuild to show updated state */
+  var ft=document.getElementById('wkPickFilter');
+  window._wkPickRebuild(ft?ft.value:'');
 }
 
+function wkPickFilter(val){
+  window._wkPickRebuild(val);
+}
+
+function wkPickClose(){
+  window._wkPickStaged={};
+  closeModal();
+  render();
+}
+
+function wkPickSave(){
+  var staged=window._wkPickStaged||{};
+  var wbsId=pickerOpen.wbsId;
+  var month=pickerOpen.month;
+  var rYr=ML[month]?ML[month].year:YEAR;
+  var rMo=ML[month]!==undefined?ML[month].month:month;
+
+  Object.keys(staged).forEach(function(wid){
+    var action=staged[wid];
+    if(action==='remove'){
+      S.assignments=S.assignments.filter(function(a){
+        return !(a.workerId===wid&&a.month===rMo&&a.year===rYr);
+      });
+    } else if(action==='add'||action==='add-foreman'){
+      /* Remove existing assignment for this worker this month if any */
+      S.assignments=S.assignments.filter(function(a){
+        return !(a.workerId===wid&&a.month===rMo&&a.year===rYr);
+      });
+      assignWorker(wid,wbsId,month,action==='add-foreman');
+    }
+  });
+
+  window._wkPickStaged={};
+  closeModal();
+  render();
+}
 
 function remAssign(el){removeAssignment(el.dataset.wid,parseInt(el.dataset.m));}
 function removeAssignment(workerId,month){
