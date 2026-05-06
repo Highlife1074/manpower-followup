@@ -380,6 +380,11 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .wk-pick-footer .fp-info{flex:1;font-size:12px;color:var(--tx2);}
 .wk-pick-footer .fp-info strong{color:var(--green);}
 .wk-pick-fm-wrap{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--tx2);}
+
+/* Sub-rows (multi-specialty per WBS) */
+.rsubrow td{height:22px;background:#f5f7ff;border-bottom:1px solid var(--border);border-right:1px solid var(--border);}
+.add-subrow-btn{font-size:10px;color:var(--blue);cursor:pointer;padding:1px 6px;border-radius:6px;border:1px dashed var(--bm);display:inline-block;margin-left:6px;}
+.add-subrow-btn:hover{background:var(--bl);}
 </style>
 </head>
 <body>
@@ -620,6 +625,34 @@ function getBudEur(w,i){var k=mkey(i);return+(w.dataEur&&w.dataEur[k]!==undefine
 function setBudEur(w,i,v){if(!w.dataEur)w.dataEur={};w.dataEur[mkey(i)]=v;}
 function addBudgetEurSlots(w){var t=0;for(var i=0;i<NM;i++)t+=getBudEur(w,i);return+t.toFixed(0);}
 
+
+/* ---- SubRow helpers (multiple specialty lines per WBS) ---- */
+function makeSubRow(spec,pu){
+  var d={};
+  return{id:uid(),spec:spec||'',pu:pu||0,data:d};
+}
+
+function subRowBudAtSlot(sr,i){
+  var k=mkey(i);
+  if(sr.data[k]!==undefined) return+(sr.data[k]||0);
+  if(sr.data['b'+i]!==undefined) return+(sr.data['b'+i]||0);
+  return 0;
+}
+function setSubRowBudSlot(sr,i,v){
+  sr.data[mkey(i)]=v;
+  delete sr.data['b'+i];
+}
+function addSubRowBudget(sr){
+  var t=0;for(var i=0;i<NM;i++)t+=subRowBudAtSlot(sr,i);return+t.toFixed(2);
+}
+
+/* Total budget for a WBS including all subRows */
+function wbsTotalBudget(w){
+  var t=addBudgetSlots(w);
+  if(w.subRows) for(var i=0;i<w.subRows.length;i++) t+=addSubRowBudget(w.subRows[i]);
+  return+t.toFixed(2);
+}
+
 function addBudgetSlots(w){
   var t=0;for(var i=0;i<NM;i++)t+=wbsBudAtSlot(w,i);return+t.toFixed(2);
 }
@@ -665,7 +698,7 @@ function pnc(v){return v>0?'neg':v<0?'pos':'zer';}
    ============================================================ */
 function makeWBS(id,name,code,parentId,companyId,spec,pu){
   var d={}; /* slot keys set via setBudSlot - legacy b0..b11 still readable */
-  return{id:id,name:name,code:code||'',parentId:parentId,companyId:companyId||'',spec:spec||'',pu:pu||0,supervisorId:'',eurOnly:false,data:d,dataEur:{}};
+  return{id:id,name:name,code:code||'',parentId:parentId,companyId:companyId||'',spec:spec||'',pu:pu||0,supervisorId:'',eurOnly:false,data:d,dataEur:{},subRows:[]};
 }
 
 function buildDefault(){
@@ -723,6 +756,7 @@ function migrate(s){
     for(var m=0;m<NM;m++)if(w.data['rad'+m]!==undefined)delete w.data['rad'+m];
     if(!w.supervisorId)w.supervisorId='';
     if(!w.dataEur)w.dataEur={};
+    if(!w.subRows)w.subRows=[];
   });
   s.assignments.forEach(function(a){if(a.isForeman===undefined)a.isForeman=false;});
   if(!s.specs||!s.specs.length)s.specs=[
@@ -858,6 +892,7 @@ function renderTabBar(){
 function switchTab(v){VIEW=v;render();}
 function goWorkers(){VIEW="workers";render();}
 function goAssign(){VIEW="assignments";render();}
+function triggerWBSImport(){var el=document.getElementById("wbsImportInput");if(el){el.value="";el.click();}}
 function triggerXLSX(){document.getElementById("xlsxInput").click();}
 
 /* ============================================================
@@ -870,6 +905,8 @@ function renderTopbarR(){
     else{h+='<button class="btn unlock" onclick="lockBudget()">&#128275; Lock</button>';h+='<button class="btn pri" onclick="openModal(\'wbs\')">+ WBS</button>';h+='<button class="btn soft" onclick="openModal(\'group\')">+ Group</button>';h+='<button class="btn soft" onclick="openModal(\'subgroup\')">+ Subgroup</button>';}
   }
   h+='<button class="btn soft" onclick="openModal(\'companies\')">&#127970; Companies</button>';
+  h+='<button class="btn soft" onclick="triggerWBSImport()" title="Import WBS hierarchy from Excel">&#128196; Import WBS</button>';
+  h+='<input type="file" id="wbsImportInput" accept=".xlsx,.xls" style="display:none" onchange="handleWBSXLSX(this.files[0])">';
   h+='<button class="btn soft" onclick="openSettingsModal()">&#9881; Settings</button>';
   h+='<button class="btn" onclick="openPinModal(\'change\')">&#128272; PIN</button>';
   h+='<button class="btn" onclick="exportCSV()">&#8595; CSV</button>';
@@ -1029,6 +1066,37 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
   h+='<tr class="rbud"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp" style="background:var(--ambl);color:var(--amber)">Budget EUR</span></td>';
   h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td><td class="p4" style="border-right:2px solid var(--border2)"></td>';
   h+='<td class="p5 num" style="color:var(--amber);font-weight:700;border-right:2px solid var(--border2)">'+(btEur?btEur.toFixed(0):'')+'</td>'+budEurCols+'</tr>';
+
+  /* SubRows */
+  if(w.subRows&&w.subRows.length>0){
+    for(var sri=0;sri<w.subRows.length;sri++){
+      var sr=w.subRows[sri]; var srBt=addSubRowBudget(sr); var srSl=specLabel(sr.spec);
+      var srCols='';
+      for(var m=0;m<NM;m++){
+        var sv=subRowBudAtSlot(sr,m);
+        if(locked) srCols+='<td class="lk num" style="color:var(--tx3)">'+(sv?sv.toFixed(1):'')+'</td>';
+        else srCols+='<td class="edt num" style="color:var(--blue)" data-wid="'+w.id+'" data-srid="'+sr.id+'" data-key="sr'+m+'" data-type="bud-sub" data-m="'+m+'" onclick="ecSubRow(this)">'+(sv?sv.toFixed(1):'')+'</td>';
+      }
+      h+='<tr class="rsubrow">';
+      h+='<td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)">';
+      h+='<span class="tp tpb" style="background:var(--pl);color:var(--pur)">+ '+(srSl||'Specialty')+'</span>';
+      if(!locked) h+='<button class="bic del" onclick="delSubRow(\''+w.id+'\',\''+sr.id+'\')">x</button>';
+      h+='</td>';
+      h+='<td class="p2" style="border-right:1px solid var(--border2)"><span class="spsel sk-'+sr.spec+'" style="cursor:default;font-size:10px">'+(srSl||'—')+'</span></td>';
+      h+='<td class="p3" style="border-right:1px solid var(--border2)"></td>';
+      h+='<td class="p4 num mut" style="border-right:2px solid var(--border2)">'+sr.pu.toFixed(2)+'</td>';
+      h+='<td class="p5 num" style="color:var(--blue);font-weight:600;border-right:2px solid var(--border2)">'+(srBt?srBt.toFixed(1):'')+'</td>';
+      h+=srCols+'</tr>';
+    }
+  }
+  /* Add subrow button */
+  if(!locked){
+    h+='<tr class="rsubrow"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2);background:var(--bg)">';
+    h+='<span class="add-subrow-btn" onclick="addSubRow(\''+w.id+'\')">+ Add specialty line</span>';
+    h+='</td>';
+    for(var m=0;m<NM+4;m++) h+='<td style="background:var(--bg);border-right:1px solid var(--border)"></td>';
+    h+='</tr>';
+  }
 
   /* Last WBS: thick separator */
   if(isLastInGroup){
@@ -1509,6 +1577,13 @@ function readCellVal(td){
   var wid=td.dataset.wid, type=td.dataset.type, mi=+td.dataset.m;
   if(type==='bud'){
     for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wid) return wbsBudAtSlot(S.wbs[i],mi);
+  } else if(type==='bud-sub'){
+    var srid=td.dataset.srid;
+    for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wid){
+      var wbs2=S.wbs[i]; if(!wbs2.subRows) return 0;
+      for(var j=0;j<wbs2.subRows.length;j++) if(wbs2.subRows[j].id===srid) return subRowBudAtSlot(wbs2.subRows[j],mi);
+    }
+    return 0;
   } else if(type==='bud-eur'){
     for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wid) return getBudEur(S.wbs[i],mi);
   } else if(type==='cc-reel'){
@@ -1524,6 +1599,13 @@ function writeCellVal(td,v){
   var wid=td.dataset.wid, type=td.dataset.type, mi=+td.dataset.m;
   if(type==='bud'){
     for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wid){setBudSlot(S.wbs[i],mi,v);break;}
+  } else if(type==='bud-sub'){
+    var srid2=td.dataset.srid;
+    for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wid){
+      var wbs3=S.wbs[i]; if(!wbs3.subRows) break;
+      for(var j=0;j<wbs3.subRows.length;j++) if(wbs3.subRows[j].id===srid2){setSubRowBudSlot(wbs3.subRows[j],mi,v);break;}
+      break;
+    }
   } else if(type==='bud-eur'){
     for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wid){setBudEur(S.wbs[i],mi,v);break;}
   } else if(type==='cc-reel'){
@@ -1536,6 +1618,10 @@ function writeCellVal(td,v){
 function borderForType(type){
   return type==='bud'?'var(--blue)':type==='bud-eur'?'var(--amber)':type==='cc-reel'?'var(--pur)':'var(--ora)';
 }
+
+/* ---- Unified cell editor ---- */
+/* writeCellVal is the single source of truth for writing to S.
+   All openInput calls go through writeCellVal so nav chains work. */
 
 function openInput(td,val,borderCol,onSave){
   if(td.querySelector('input')) return;
@@ -1550,28 +1636,27 @@ function openInput(td,val,borderCol,onSave){
 
   var committed=false;
 
-  function saveValue(){
-    if(committed) return true;
+  function commit(){
+    if(committed) return;
     committed=true;
-    var v=parseFloat(inp.value);
-    onSave(isNaN(v)?0:+v.toFixed(1));
-    return true;
+    var rawV=parseFloat(inp.value);
+    var v=isNaN(rawV)?0:+rawV.toFixed(1);
+    /* Always write to S via writeCellVal for consistency */
+    writeCellVal(td,v);
+    /* Also call original onSave for any extra side-effects */
+    if(onSave) onSave(v);
+    return v;
   }
 
-  function openCell(targetTd){
-    /* Write value directly so it's in S immediately */
-    if(!committed){
-      committed=true;
-      var rawV=parseFloat(inp.value);
-      var writeV=isNaN(rawV)?0:+rawV.toFixed(1);
-      writeCellVal(td,writeV);
-      onSave(writeV);
-      /* Show value in current td immediately */
-      td.innerHTML=writeV?writeV.toFixed(1):'';
-    }
+  function navTo(targetTd){
+    var v=commit();
+    /* Update display of current cell in-place (no full render) */
+    var disp=v!==undefined?v:readCellVal(td);
+    td.innerHTML=disp?disp.toFixed(1):'';
+    /* Open next cell — onSave is just writeCellVal (already handled inside openInput) */
     var nval=readCellVal(targetTd);
     var nBorder=borderForType(targetTd.dataset.type);
-    openInput(targetTd,nval,nBorder,function(v2){writeCellVal(targetTd,v2);});
+    openInput(targetTd,nval,nBorder,null);
   }
 
   inp.addEventListener('keydown',function(e){
@@ -1579,26 +1664,18 @@ function openInput(td,val,borderCol,onSave){
       e.preventDefault(); e.stopPropagation();
       var cells=getEdtCells();
       var idx=cells.indexOf(td);
-      /* Tab: right (forward). Shift+Tab: left (backward). Enter: right. */
       var dir=(e.shiftKey&&e.key==='Tab')?-1:1;
       var next=cells[idx+dir];
-      if(next){
-        openCell(next);
-      } else {
-        saveValue();
-        render();
-      }
+      if(next) navTo(next);
+      else { commit(); render(); }
       return;
     }
-    /* Ctrl/Cmd + C: copy cell value to clipboard */
     if((e.ctrlKey||e.metaKey)&&e.key==='c'){
       CELL_CLIPBOARD=parseFloat(inp.value)||0;
-      /* flash border green to confirm */
       inp.style.borderColor='var(--green)';
       setTimeout(function(){inp.style.borderColor=borderCol;},400);
       return;
     }
-    /* Ctrl/Cmd + V: paste clipboard value */
     if((e.ctrlKey||e.metaKey)&&e.key==='v'&&CELL_CLIPBOARD!==null){
       e.preventDefault();
       inp.value=CELL_CLIPBOARD;
@@ -1608,14 +1685,11 @@ function openInput(td,val,borderCol,onSave){
     if(e.key==='Escape'){committed=true; render();}
   });
 
-  /* Right-click context menu on td for copy/paste */
   td.oncontextmenu=function(e){
     e.preventDefault();
-    /* save current value silently */
     var curV=parseFloat(inp.value)||0;
     writeCellVal(td,curV);
     CELL_CLIPBOARD=curV;
-    /* show tiny toast */
     var t=document.createElement('div');
     t.textContent='Copied: '+curV;
     t.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1e1b18;color:#fff;padding:6px 14px;border-radius:20px;font-size:12px;z-index:9999;pointer-events:none;opacity:1;transition:opacity .4s';
@@ -1626,14 +1700,13 @@ function openInput(td,val,borderCol,onSave){
   inp.addEventListener('blur',function(){
     setTimeout(function(){
       if(committed) return;
+      /* Check if focus moved to another edt input — nav is handling it */
       var active=document.activeElement;
-      if(active&&active.closest&&active.closest('td.edt')) return;
-      /* Leaving the table entirely: save, update display in-place, then render */
-      saveValue();
-      var dv=readCellVal(td);
-      td.innerHTML=dv?dv.toFixed(1):'';
+      if(active&&active.tagName==='INPUT'&&active.closest&&active.closest('td.edt')) return;
+      /* Focus left table — commit and do full render */
+      commit();
       render();
-    },30);
+    },40);
   });
 }
 
@@ -1653,10 +1726,8 @@ function openEdtEur(td){
 
 function ecCC(td,wid,m,type,cur){
   var borderCol=type==='reel'?'var(--pur)':'var(--ora)';
-  openInput(td,cur,borderCol,function(v){
-    if(type==='reel')ccSlot(m).reel[wid]=v;
-    else ccSlot(m).rad[wid]=v;
-  });
+  /* writeCellVal handles cc-reel and cc-rad via data attrs — no extra onSave needed */
+  openInput(td,cur,borderCol,null);
 }
 
 /* Paste clipboard to any edt cell by clicking it while holding Alt */
@@ -2229,7 +2300,7 @@ function importWorkers(rows){
     return null;
   }
 
-  var imported=0,updated=0,skipped=0,noCoMatch=[];
+  var imported=0,updated=0,skipped=0,noCoMatch=[],changedWorkers=[];
   for(var ri=headerIdx+1;ri<rows.length;ri++){
     var row=rows[ri];
     if(!row||!row.length) continue;
@@ -2277,10 +2348,13 @@ function importWorkers(rows){
     var dateEnd=robustDate(ciEnd>=0?row[ciEnd]:null);
     var dateRev=robustDate(ciRev>=0?row[ciRev]:null);
 
-    /* Match existing by workerId first, then by name */
+    /* Match existing by workerId first, then by exact name */
     var existing=null;
     if(workerId){for(var wi=0;wi<S.workers.length;wi++) if(S.workers[wi].workerId===workerId){existing=S.workers[wi];break;}}
-    if(!existing){for(var wi=0;wi<S.workers.length;wi++) if(S.workers[wi].name===name){existing=S.workers[wi];break;}}
+    if(!existing){
+      var nameLow=name.toLowerCase();
+      for(var wi=0;wi<S.workers.length;wi++) if(S.workers[wi].name.toLowerCase()===nameLow){existing=S.workers[wi];break;}
+    }
 
     var wk={
       id:existing?existing.id:uid(),
@@ -2294,17 +2368,41 @@ function importWorkers(rows){
     };
 
     if(existing){
-      S.workers[S.workers.indexOf(existing)]=wk;
-      updated++;
+      /* Check if anything changed */
+      var changed=[];
+      if(existing.spec!==specKey&&specKey) changed.push('specialty: '+specLabel(existing.spec)+' → '+specLabel(specKey));
+      var newCo=getCompany(companyId); var oldCo=getCompany(existing.companyId);
+      if((newCo?newCo.name:'')!==(oldCo?oldCo.name:'')&&companyId) changed.push('company: '+(oldCo?oldCo.name:'?')+' → '+(newCo?newCo.name:'?'));
+      if(dateEnd&&existing.dateFinContrat){
+        var newEnd=dateEnd.toISOString().slice(0,10);
+        var oldEnd=existing.dateFinContrat.slice(0,10);
+        if(newEnd!==oldEnd) changed.push('contract end: '+oldEnd+' → '+newEnd);
+      } else if(dateEnd&&!existing.dateFinContrat){
+        changed.push('contract end: (none) → '+dateEnd.toISOString().slice(0,10));
+      }
+      if(changed.length>0){
+        changedWorkers.push({existing:existing,newWk:wk,changes:changed});
+      } else {
+        /* No change — update dates silently */
+        S.workers[S.workers.indexOf(existing)]=wk;
+        updated++;
+      }
     } else {
       S.workers.push(wk);
       imported++;
     }
   }
+
+  /* Show overwrite dialog if there are changed workers */
+  if(changedWorkers.length>0){
+    showImportConflictDialog(changedWorkers,imported,updated,skipped,noCoMatch);
+    return;
+  }
+
   saveS();render();
   var msg='Import done: '+imported+' new, '+updated+' updated';
   if(skipped) msg+=' ('+skipped+' blank rows skipped)';
-  if(noCoMatch.length) msg+='\n\nUnmatched companies (stored as empty):\n'+noCoMatch.slice(0,10).join(', ')+(noCoMatch.length>10?'...':'');
+  if(noCoMatch.length) msg+='\n\nUnmatched companies:\n'+noCoMatch.slice(0,10).join(', ')+(noCoMatch.length>10?'...':'');
   showToast(msg,'ok');
 }
 
@@ -3217,6 +3315,272 @@ function saveSettings(){
   render();
 }
 
+
+
+/* ---- Import conflict dialog ---- */
+function showImportConflictDialog(conflicts,imported,updated,skipped,noCoMatch){
+  var box=document.getElementById('mbox');
+  var h='<h3>&#9888; Import Conflicts</h3>';
+  h+='<p style="font-size:12px;color:var(--tx2);margin-bottom:12px">';
+  h+=conflicts.length+' worker'+(conflicts.length>1?'s have':'has')+' changed data in the file. Choose what to do:</p>';
+  h+='<div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">';
+  h+='<table style="border-collapse:collapse;width:100%;font-size:11px">';
+  h+='<thead><tr style="background:var(--bg2)">';
+  h+='<th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--border2)"><input type="checkbox" id="cfAll" onchange="cfToggleAll(this)" checked> All</th>';
+  h+='<th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--border2)">Worker</th>';
+  h+='<th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--border2)">Changes</th>';
+  h+='</tr></thead><tbody>';
+  for(var i=0;i<conflicts.length;i++){
+    var cf=conflicts[i];
+    h+='<tr style="border-bottom:1px solid var(--border)">';
+    h+='<td style="padding:5px 10px;text-align:center"><input type="checkbox" class="cf-cb" data-idx="'+i+'" checked></td>';
+    h+='<td style="padding:5px 10px;font-weight:600">'+cf.existing.name+'</td>';
+    h+='<td style="padding:5px 10px;color:var(--ora)">'+cf.changes.join('<br>')+'</td>';
+    h+='</tr>';
+  }
+  h+='</tbody></table></div>';
+  h+='<p style="font-size:11px;color:var(--tx3);margin-top:8px">Unchecked workers will keep their existing data.</p>';
+
+  /* Store conflicts on window for access from buttons */
+  window._importConflicts=conflicts;
+  window._importStats={imported:imported,updated:updated,skipped:skipped,noCoMatch:noCoMatch};
+
+  h+='<div class="ma">';
+  h+='<button class="btn" onclick="cfApply(false)">Skip all conflicts</button>';
+  h+='<button class="btn pri" onclick="cfApply(true)">Overwrite checked</button>';
+  h+='</div>';
+
+  box.innerHTML=h;
+  document.getElementById('mbg').style.display='flex';
+}
+
+function cfToggleAll(masterCb){
+  document.querySelectorAll('.cf-cb').forEach(function(cb){cb.checked=masterCb.checked;});
+}
+
+function cfApply(overwrite){
+  var conflicts=window._importConflicts||[];
+  var stats=window._importStats||{};
+  var applied=0;
+  if(overwrite){
+    var checked={};
+    document.querySelectorAll('.cf-cb:checked').forEach(function(cb){checked[cb.dataset.idx]=true;});
+    for(var i=0;i<conflicts.length;i++){
+      if(checked[i]){
+        var idx=S.workers.indexOf(conflicts[i].existing);
+        if(idx>=0){S.workers[idx]=conflicts[i].newWk;applied++;}
+      }
+    }
+  }
+  closeModal();
+  saveS();render();
+  var msg='Import done: '+(stats.imported||0)+' new, '+(stats.updated||0)+' updated, '+applied+' conflicts overwritten';
+  if(stats.skipped) msg+=' ('+stats.skipped+' blank rows skipped)';
+  if(stats.noCoMatch&&stats.noCoMatch.length) msg+='\n\nUnmatched companies:\n'+stats.noCoMatch.slice(0,8).join(', ');
+  showToast(msg,'ok');
+}
+
+
+/* ============================================================
+   WBS HIERARCHY IMPORT FROM EXCEL
+   ============================================================
+   Expected columns (flexible): Group, Subgroup, WBS Name, Code,
+   Company, Specialty, PU, EUR Only
+   Creates groups/subgroups/WBS if they don't exist.
+   ============================================================ */
+
+function handleWBSXLSX(file){
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var data=new Uint8Array(e.target.result);
+      var wb=XLSX.read(data,{type:'array',cellDates:true,raw:true});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+      /* Skip blank leading rows */
+      var startRow=0;
+      for(var i=0;i<Math.min(5,rows.length);i++){
+        if(rows[i]&&rows[i].some(function(v){return v!==null&&v!==undefined&&v!=='';})){startRow=i;break;}
+      }
+      importWBSHierarchy(rows.slice(startRow));
+    }catch(err){alert('Error reading WBS file: '+err.message);console.error(err);}
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function importWBSHierarchy(rows){
+  if(!rows||rows.length<2){alert('Empty file');return;}
+  var header=rows[0].map(function(h){return (h||'').toString().trim().toLowerCase();});
+
+  function col(names){
+    for(var ni=0;ni<names.length;ni++){
+      var idx=header.indexOf(names[ni]);
+      if(idx>=0) return idx;
+      for(var j=0;j<header.length;j++) if(header[j]&&header[j].indexOf(names[ni])>=0) return j;
+    }
+    return -1;
+  }
+
+  var ciGroup=col(['group','groupe','category','cat']);
+  var ciSub=col(['subgroup','sub group','sous-groupe','sub']);
+  var ciCode=col(['code','wbs code','ref']);
+  var ciName=col(['name','wbs name','task','nom','tâche','tache']);
+  var ciCo=col(['company','entreprise']);
+  var ciSpec=col(['specialty','specialite','trade']);
+  var ciPU=col(['pu','rate','unit rate','tarif','prix']);
+  var ciEur=col(['eur only','euro only','eur-only','euros only']);
+
+  if(ciName<0){alert('Column "Name" not found. Headers: '+header.join(', '));return;}
+
+  /* Helper: find or create group */
+  function getOrCreateGroup(name){
+    if(!name) return null;
+    for(var i=0;i<S.groups.length;i++) if(S.groups[i].name.toLowerCase()===name.toLowerCase()) return S.groups[i];
+    var g={id:uid(),name:name,col:false,sub:[]};
+    S.groups.push(g);
+    return g;
+  }
+  /* Helper: find or create subgroup inside a group */
+  function getOrCreateSub(group,name){
+    if(!name||!group) return null;
+    for(var i=0;i<group.sub.length;i++) if(group.sub[i].name.toLowerCase()===name.toLowerCase()) return group.sub[i];
+    var sg={id:uid(),name:name,col:false};
+    group.sub.push(sg);
+    return sg;
+  }
+
+  var added=0,skipped=0;
+  var lastGroup=null,lastSub=null;
+
+  for(var ri=1;ri<rows.length;ri++){
+    var row=rows[ri];
+    if(!row||!row.length) continue;
+
+    var grpName=ciGroup>=0?(row[ciGroup]||'').toString().trim():'';
+    var subName=ciSub>=0?(row[ciSub]||'').toString().trim():'';
+    var wbsName=(row[ciName]||'').toString().trim();
+    var wbsCode=ciCode>=0?(row[ciCode]||'').toString().trim():'';
+
+    /* Update current group/sub context even if no WBS on this row */
+    if(grpName) lastGroup=getOrCreateGroup(grpName);
+    if(subName&&lastGroup) lastSub=getOrCreateSub(lastGroup,subName);
+    else if(grpName&&!subName) lastSub=null;
+
+    if(!wbsName||wbsName.charAt(0)==='='||!isNaN(+wbsName)) {skipped++;continue;}
+
+    var coName=ciCo>=0?(row[ciCo]||'').toString().trim():'';
+    var specRaw=ciSpec>=0?(row[ciSpec]||'').toString():'';
+    var puRaw=ciPU>=0?parseFloat(row[ciPU]||0)||0:0;
+    var eurOnly=ciEur>=0&&/yes|oui|1|true/i.test((row[ciEur]||'').toString());
+
+    /* Match company */
+    var co=getCompanyByName(coName);
+    if(!co&&coName){
+      var cl=coName.toLowerCase();
+      for(var ci=0;ci<S.companies.length;ci++) if(S.companies[ci].name.toLowerCase()===cl){co=S.companies[ci];break;}
+    }
+    var companyId=co?co.id:'';
+
+    /* Match specialty */
+    var specKey='';
+    if(specRaw){
+      var up=specRaw.trim().toUpperCase();
+      for(var si=0;si<SPECS.length;si++){
+        if(SPECS[si].key===up||SPECS[si].label.toUpperCase()===up){specKey=SPECS[si].key;break;}
+      }
+      if(!specKey){
+        if(up.indexOf('CARP')>=0) specKey='CARP';
+        else if(up.indexOf('STEEL')>=0||up.indexOf('FIX')>=0||up.indexOf('FITTER')>=0) specKey='STEEL';
+        else if(up.indexOf('HELP')>=0) specKey='HELP';
+        else if(up.indexOf('FINISH')>=0) specKey='FINISH';
+        else if(up.indexOf('DRY')>=0) specKey='DRY';
+      }
+    }
+
+    /* Auto PU from company tarif */
+    if(!puRaw&&companyId&&specKey) puRaw=getPU(companyId,specKey)||0;
+
+    /* Determine parent */
+    var parentId='';
+    if(lastSub) parentId=lastSub.id;
+    else if(lastGroup) parentId=lastGroup.id;
+    else {
+      /* No group context — check if row has group inline */
+      if(!lastGroup) lastGroup=getOrCreateGroup('Imported');
+      parentId=lastGroup.id;
+    }
+
+    /* Check if WBS already exists (by code or name+parent) */
+    var existingW=null;
+    for(var wi=0;wi<S.wbs.length;wi++){
+      if(wbsCode&&S.wbs[wi].code===wbsCode){existingW=S.wbs[wi];break;}
+      if(!wbsCode&&S.wbs[wi].name===wbsName&&S.wbs[wi].parentId===parentId){existingW=S.wbs[wi];break;}
+    }
+
+    if(!existingW){
+      var newW=makeWBS(uid(),wbsName,wbsCode,parentId,companyId,specKey,puRaw);
+      newW.eurOnly=eurOnly;
+      S.wbs.push(newW);
+      added++;
+    } else {
+      skipped++;
+    }
+  }
+
+  saveS();render();
+  showToast('WBS import: '+added+' added, '+skipped+' skipped (already exist)','ok');
+}
+
+
+function addSubRow(wbsId){
+  var w=null;for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wbsId){w=S.wbs[i];break;}
+  if(!w) return;
+  if(!w.subRows) w.subRows=[];
+  /* Open a small modal to pick spec+pu */
+  var box=document.getElementById('mbox');
+  var spO='';for(var i=0;i<SPECS.length-1;i++) spO+='<option value="'+SPECS[i].key+'">'+SPECS[i].label+'</option>';
+  var h='<h3>Add Specialty Line</h3>';
+  h+='<label>Specialty</label><select id="srSpec" onchange="autoFillSRPU(\''+wbsId+'\')">'+spO+'</select>';
+  h+='<label>Unit Rate (EUR/MM)</label><input id="srPU" type="number" step="0.01" value="0">';
+  h+='<div class="ma"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="confirmAddSubRow(\''+wbsId+'\')">Add</button></div>';
+  box.innerHTML=h;
+  document.getElementById('mbg').style.display='flex';
+}
+
+function autoFillSRPU(wbsId){
+  var w=null;for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wbsId){w=S.wbs[i];break;}
+  if(!w) return;
+  var spec=document.getElementById('srSpec').value;
+  var pu=getPU(w.companyId,spec)||0;
+  var el=document.getElementById('srPU'); if(el&&pu>0) el.value=pu;
+}
+
+function confirmAddSubRow(wbsId){
+  var spec=document.getElementById('srSpec').value;
+  var pu=parseFloat(document.getElementById('srPU').value)||0;
+  var w=null;for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wbsId){w=S.wbs[i];break;}
+  if(!w) return;
+  if(!w.subRows) w.subRows=[];
+  w.subRows.push(makeSubRow(spec,pu));
+  closeModal(); render();
+}
+
+function delSubRow(wbsId,srId){
+  var w=null;for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wbsId){w=S.wbs[i];break;}
+  if(!w||!w.subRows) return;
+  w.subRows=w.subRows.filter(function(sr){return sr.id!==srId;});
+  render();
+}
+
+function ecSubRow(td){
+  var wbsId=td.dataset.wid; var srId=td.dataset.srid; var mi=+td.dataset.m;
+  var w=null;for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wbsId){w=S.wbs[i];break;}
+  if(!w||!w.subRows) return;
+  var sr=null;for(var i=0;i<w.subRows.length;i++) if(w.subRows[i].id===srId){sr=w.subRows[i];break;}
+  if(!sr) return;
+  var cur=subRowBudAtSlot(sr,mi);
+  openInput(td,cur,'var(--blue)',function(v){setSubRowBudSlot(sr,mi,v);});
+}
 
 /* ============================================================
    BACKUP EXPORT / IMPORT
