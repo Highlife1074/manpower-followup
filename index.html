@@ -168,9 +168,14 @@ td{padding:0 7px;vertical-align:middle;white-space:nowrap;border-right:1px solid
 .edt{cursor:pointer;border-radius:3px;}
 .edt:hover{background:rgba(61,90,128,.08)!important;}
 td.lk{background:var(--bg2)!important;color:var(--tx3)!important;}
-td.col-past-td{background:#f6f7fc!important;}
-td.col-cur-td{background:rgba(108,63,245,.06)!important;}
-td.col-rad-td{background:rgba(217,119,6,.05)!important;}
+td.col-past-td{background:#f4f4f8!important;}
+td.col-cur-td{background:rgba(78,69,128,.10)!important;}
+td.col-rad-td{background:rgba(140,97,36,.07)!important;}
+/* Editable cells: show a subtle underline so user knows they're clickable */
+td.edt.col-cur-td{border-bottom:2px solid var(--pur)!important;}
+td.edt.col-rad-td{border-bottom:2px solid var(--ora)!important;}
+/* Empty editable cells show a dash placeholder */
+td.edt:empty::after{content:'—';color:var(--border2);font-family:var(--mono);font-size:11px;}
 
 /* Badges */
 .cie{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;}
@@ -334,6 +339,24 @@ tr.dragging{opacity:.3;} tr.dov td{border-top:2px solid var(--blue)!important;}
 .sug-item span{flex:1;}
 .sug-item .sug-del{color:var(--tx3);cursor:pointer;font-size:10px;flex-shrink:0;}
 .sug-item .sug-del:hover{color:var(--red);}
+
+/* Worker assignment modal */
+.wk-pick-modal{background:var(--white);border-radius:14px;padding:20px 24px;width:640px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2);}
+.wk-pick-modal h3{font-size:14px;font-weight:700;margin-bottom:4px;}
+.wk-pick-modal .subtitle{font-size:11px;color:var(--tx3);margin-bottom:14px;}
+.wk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;overflow-y:auto;flex:1;padding-right:4px;}
+.wk-card{border:2px solid var(--border2);border-radius:9px;padding:9px 12px;cursor:pointer;transition:all .14s;position:relative;}
+.wk-card:hover{border-color:var(--blue);background:var(--bl);}
+.wk-card.assigned{border-color:var(--red);background:var(--rl);cursor:default;opacity:.8;}
+.wk-card.assigned:hover{border-color:var(--red);background:var(--rl);}
+.wk-card.available{border-color:var(--border2);background:var(--white);}
+.wk-card .wc-name{font-weight:700;font-size:12px;color:var(--tx);}
+.wk-card .wc-meta{font-size:10px;color:var(--tx3);margin-top:2px;}
+.wk-card .wc-badge{position:absolute;top:6px;right:6px;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;}
+.wc-badge.av{background:var(--gl);color:var(--green);}
+.wc-badge.as{background:var(--rl);color:var(--red);}
+.wc-badge.oo{background:var(--bg2);color:var(--tx3);}
+.wk-pick-fm{display:flex;align-items:center;gap:8px;padding:10px 0 6px;border-top:1px solid var(--border);margin-top:10px;font-size:12px;}
 </style>
 </head>
 <body>
@@ -384,39 +407,58 @@ function setSyncStatus(st, msg){
 /* Remove undefined/null values recursively — Firestore rejects them */
 function cleanForFirestore(obj){
   if(Array.isArray(obj)){
-    return obj.map(function(item){return cleanForFirestore(item);}).filter(function(item){return item!==undefined;});
+    return obj.map(function(item){return cleanForFirestore(item);});
   }
-  if(obj&&typeof obj==='object'&&!(obj instanceof Date)){
+  if(obj!==null&&obj!==undefined&&typeof obj==='object'&&!(obj instanceof Date)){
     var out={};
     Object.keys(obj).forEach(function(k){
       var v=obj[k];
-      if(v===undefined||v===null) return; /* skip */
-      if(typeof v==='string'&&v==='') return; /* skip empty strings only if top-level keys that cause issues */
+      if(v===undefined) return; /* skip undefined only — null and '' are valid */
       out[k]=cleanForFirestore(v);
     });
     return out;
   }
+  /* Convert null to '' for Firestore string fields to avoid rejection */
+  if(obj===null) return '';
   return obj;
 }
 
 function saveS(){
-  /* Always keep localStorage as fallback */
-  try{localStorage.setItem('hht8',JSON.stringify(S));}catch(e){}
-  if(!db) return;
-  setSyncStatus('syncing','Saving...');
-  var payload;
+  /* Always keep localStorage as fallback first */
+  var json='';
   try{
-    payload=cleanForFirestore(JSON.parse(JSON.stringify(S)));
+    json=JSON.stringify(S);
+    localStorage.setItem('hht8',json);
   }catch(e){
-    console.error('cleanForFirestore error:',e);
-    setSyncStatus('error','Data error');
+    console.error('localStorage error:',e);
+  }
+
+  if(!db||syncStatus==='init') return;
+  setSyncStatus('syncing','Saving...');
+
+  /* Size check — Firestore limit is ~1MB per document */
+  if(json.length>900000){
+    setSyncStatus('error','Data too large (>900KB) — only localStorage saved');
+    console.warn('Payload too large:',json.length,'bytes');
     return;
   }
-  console.log('Firebase: saving payload keys:',Object.keys(payload));
+
+  var payload;
+  try{
+    payload=cleanForFirestore(JSON.parse(json));
+  }catch(e){
+    console.error('cleanForFirestore error:',e);
+    setSyncStatus('error','Serialization error');
+    return;
+  }
+
   db.doc(DOC_PATH).set(payload)
-    .then(function(){ setSyncStatus('ok','Live'); })
+    .then(function(){
+      setSyncStatus('ok','Saved ✓');
+      setTimeout(function(){if(syncStatus==='Saved ✓'||syncStatus==='ok')setSyncStatus('ok','Live');},2000);
+    })
     .catch(function(e){
-      setSyncStatus('error','Error: '+(e.code||e.message));
+      setSyncStatus('error','Save failed: '+(e.code||e.message));
       console.error('Firestore save error:',e.code,e.message,e);
     });
 }
@@ -437,12 +479,14 @@ function initFirebase(){
           var migrated = migrate(remote);
           if(migrated){
             S = migrated;
+            applySettings();
             setSyncStatus('ok','Live');
             render();
           }
         } else {
-          setSyncStatus('ok','New project');
-          console.log('Firebase: no data yet, saving defaults...');
+          /* No remote data — push local data up */
+          setSyncStatus('ok','Uploading local data...');
+          console.log('Firebase: no remote data, uploading local...');
           saveS();
         }
       }, function(err){
@@ -680,6 +724,12 @@ function migrate(s){
     delete s.cc;
   }
   if(!s.ccByKey)s.ccByKey={};
+  /* Ensure all ccByKey slots have complete inv structure */
+  Object.keys(s.ccByKey).forEach(function(k){
+    if(!s.ccByKey[k].inv)s.ccByKey[k].inv={hrs:0,hm:0,amt:0,note:''};
+    if(s.ccByKey[k].inv.note===undefined)s.ccByKey[k].inv.note='';
+    if(s.ccByKey[k].inv.hm===undefined)s.ccByKey[k].inv.hm=0;
+  });
   /* migrate workers: add workerId field if missing */
   s.workers.forEach(function(wk){if(!wk.workerId)wk.workerId='';});
   /* migrate WBS: companyId and spec may be empty (EUR-only rows) - that is valid */
@@ -794,6 +844,11 @@ function renderTopbarR(){
   h+='<button class="btn soft" onclick="openSettingsModal()">&#9881; Settings</button>';
   h+='<button class="btn" onclick="openPinModal(\'change\')">&#128272; PIN</button>';
   h+='<button class="btn" onclick="exportCSV()">&#8595; CSV</button>';
+  h+='<button class="btn soft" onclick="exportBackup()" title="Export full data backup (.json)">&#128190; Backup</button>';
+  h+='<button class="btn soft" onclick="triggerImport()" title="Import data from backup file">&#128228; Import</button>';
+  h+='<input type="file" id="importFileInput" accept=".json" style="display:none" onchange="importBackup(this.files[0])">';
+  h+='<span id="syncIndicator" style="font-size:11px;padding:4px 8px;border-radius:6px;background:var(--bg2);border:1px solid var(--border2)">&#9899; Connecting</span>';
+  h+='<button class="btn" onclick="saveS()" title="Force save to cloud" style="padding:5px 8px">&#9729; Save</button>';
   document.getElementById('topbarR').innerHTML=h;
 }
 
@@ -974,7 +1029,9 @@ function renderCCPage(page){
   var banner='<div class="cc-banner"><span class="ctitle">Cost Control — '+slotLabel+'</span>';
   banner+='<div class="cc-legend"><span class="cl-item"><span class="cl-dot" style="background:var(--tx3)"></span>Past (read-only)</span>';
   banner+='<span class="cl-item"><span class="cl-dot" style="background:var(--pur)"></span>CC Actual</span>';
-  banner+='<span class="cl-item"><span class="cl-dot" style="background:var(--ora)"></span>ETC</span></div></div>';
+  banner+='<span class="cl-item"><span class="cl-dot" style="background:var(--ora)"></span>ETC</span></div>';
+  banner+='<span style="font-size:11px;color:var(--tx3);margin-left:auto">Click <strong style="color:var(--pur)">✏ Actual/ETC</strong> cells to enter values</span>';
+  banner+='</div>';
 
   var tableHtml='<div class="tw"><table><thead>'+ccHead(page)+'</thead><tbody>'+ccBody(page)+'</tbody></table></div>';
   var invHtml=renderInvSection(page);
@@ -1112,15 +1169,20 @@ function wbsCCRows(w,lv,page,isLast){
   for(var m=0;m<NM;m++){var ve=getBudEur(w,m);var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';h+='<td class="'+cls+' lk num" style="color:var(--tx3)">'+(ve?ve.toFixed(0):'')+'</td>';}
   h+='</tr>';
   /* Actual/ETC row - editable */
-  h+='<tr class="rre"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpr">Actual/ETC</span></td>';
+  h+='<tr class="rre"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpr" title="Click cells to enter actuals (CC month) or ETC (future months)">✏ Actual/ETC</span></td>';
   h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td><td class="p4" style="border-right:2px solid var(--border2)"></td>';
   h+='<td class="p5 num" style="color:var(--green);font-weight:700;border-right:2px solid var(--border2)">'+rc2.toFixed(1)+'</td><td style="border-right:2px solid var(--border2)"></td>';
   for(var m=0;m<NM;m++){
     var cv=ccVal(w,m,page); var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';
     var wid=w.id;
     if(cv.type==='past')h+='<td class="'+cls+' num" style="color:var(--tx2)">'+f1(cv.v)+'</td>';
-    else if(cv.type==='cur')h+='<td class="'+cls+' edt num" style="color:var(--pur);font-weight:600" data-wid="'+wid+'" data-key="r'+m+'" data-type="cc-reel" data-m="'+m+'" onclick="ecCC(this,\''+wid+'\','+m+',\'reel\','+cv.v+')">'+f1(cv.v)+'</td>';
-    else h+='<td class="'+cls+' edt num" style="color:var(--ora)" data-wid="'+wid+'" data-key="r'+m+'" data-type="cc-rad" data-m="'+m+'" onclick="ecCC(this,\''+wid+'\','+m+',\'rad\','+cv.v+')">'+f1(cv.v)+'</td>';
+    else if(cv.type==='cur'){
+      var dv=cv.v?cv.v.toFixed(1):'0';
+      h+='<td class="'+cls+' edt num" style="color:var(--pur);font-weight:600" data-wid="'+wid+'" data-key="r'+m+'" data-type="cc-reel" data-m="'+m+'" onclick="ecCC(this,\''+wid+'\','+m+',\'reel\','+cv.v+')">'+dv+'</td>';
+    } else {
+      var dv2=cv.v?cv.v.toFixed(1):'';
+      h+='<td class="'+cls+' edt num" style="color:var(--ora)" data-wid="'+wid+'" data-key="r'+m+'" data-type="cc-rad" data-m="'+m+'" onclick="ecCC(this,\''+wid+'\','+m+',\'rad\','+cv.v+')">'+dv2+'</td>';
+    }
   }
   h+='</tr>';
   /* Variance */
@@ -1962,12 +2024,22 @@ function handleXLSX(file){
   reader.onload=function(e){
     try{
       var data=new Uint8Array(e.target.result);
-      var wb=XLSX.read(data,{type:'array',cellDates:true});
+      /* raw:true gives us native numbers for date serials; cellDates:true converts to JS Date objects */
+      var wb=XLSX.read(data,{type:'array',cellDates:true,raw:true});
       var ws=wb.Sheets[wb.SheetNames[0]];
-      var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:'DD/MM/YYYY'});
-      importWorkers(rows);
+      /* Get raw rows WITH dates as Date objects */
+      var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+      /* Skip leading blank rows to find header */
+      var startRow=0;
+      for(var i=0;i<Math.min(5,rows.length);i++){
+        var r=rows[i];
+        var hasContent=r&&r.some(function(v){return v!==null&&v!==undefined&&v!=='';});
+        if(hasContent){startRow=i;break;}
+      }
+      importWorkers(rows.slice(startRow));
     }catch(err){
       alert('Error reading file: '+err.message);
+      console.error(err);
     }
   };
   reader.readAsArrayBuffer(file);
@@ -2022,39 +2094,59 @@ function importWorkers(rows){
     return '';
   }
 
-  /* Robust date parsing that handles Excel serials AND text */
+  /* Robust date parsing: JS Date (from cellDates:true), Excel serial, or text string */
   function robustDate(val){
-    if(!val&&val!==0) return null;
-    /* SheetJS with {raw:false,dateNF:'DD/MM/YYYY'} returns date strings */
+    if(val===null||val===undefined||val==='') return null;
+    /* Already a JS Date (SheetJS cellDates:true) */
+    if(val instanceof Date){
+      if(!isNaN(val.getTime())) return val;
+      return null;
+    }
+    /* Excel serial number */
+    if(typeof val==='number'&&val>0){
+      /* Lotus 1900 bug: serials > 60 need -1 */
+      var serial=val>60?val-1:val;
+      var d=new Date(Math.round((serial-25569)*86400*1000));
+      /* Adjust for timezone offset to get correct local date */
+      var tzOff=d.getTimezoneOffset()*60000;
+      d=new Date(d.getTime()+tzOff);
+      if(!isNaN(d.getTime())&&d.getFullYear()>1900) return d;
+    }
+    /* String formats */
     if(typeof val==='string'){
       var s=val.trim();
       if(!s) return null;
-      /* DD/MM/YYYY */
+      /* DD/MM/YYYY or D/M/YYYY */
       var p=s.split('/');
-      if(p.length===3&&p[0].length<=2){
-        var d=new Date(+p[2],+p[1]-1,+p[0]);
-        if(!isNaN(d.getTime())) return d;
+      if(p.length===3){
+        /* Try DD/MM/YYYY first */
+        if(p[0].length<=2&&parseInt(p[1])<=12){
+          var d2=new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]));
+          if(!isNaN(d2.getTime())&&d2.getFullYear()>1900) return d2;
+        }
+        /* Try MM/DD/YYYY */
+        var d3=new Date(parseInt(p[2]),parseInt(p[0])-1,parseInt(p[1]));
+        if(!isNaN(d3.getTime())&&d3.getFullYear()>1900) return d3;
       }
-      /* YYYY-MM-DD */
-      var d2=new Date(s);
-      if(!isNaN(d2.getTime())) return d2;
-      /* MM/DD/YYYY fallback */
-      var p2=s.split('/');
-      if(p2.length===3){var d3=new Date(+p2[2],+p2[0]-1,+p2[1]);if(!isNaN(d3.getTime())) return d3;}
+      /* DD-MM-YYYY or YYYY-MM-DD */
+      var p2=s.split('-');
+      if(p2.length===3){
+        if(p2[0].length===4){
+          var d4=new Date(parseInt(p2[0]),parseInt(p2[1])-1,parseInt(p2[2]));
+          if(!isNaN(d4.getTime())) return d4;
+        } else {
+          var d5=new Date(parseInt(p2[2]),parseInt(p2[1])-1,parseInt(p2[0]));
+          if(!isNaN(d5.getTime())&&d5.getFullYear()>1900) return d5;
+        }
+      }
+      /* ISO or other formats */
+      var d6=new Date(s);
+      if(!isNaN(d6.getTime())&&d6.getFullYear()>1900) return d6;
     }
-    if(typeof val==='number'&&val>0){
-      /* Excel serial: days since 1900-01-01, with Lotus bug correction */
-      var serial=val>60?val-1:val; /* remove Lotus 1900 bug */
-      var msPerDay=86400000;
-      var epoch=new Date(1899,11,31).getTime(); /* Dec 31 1899 */
-      var d=new Date(epoch+serial*msPerDay);
-      if(!isNaN(d.getTime())) return d;
-    }
-    if(val instanceof Date&&!isNaN(val.getTime())) return val;
     return null;
   }
 
-  var imported=0,updated=0,skipped=0;
+  var imported=0,updated=0,skipped=0,noCoMatch=[];
   for(var ri=1;ri<rows.length;ri++){
     var row=rows[ri];
     /* Build full name */
@@ -2073,8 +2165,16 @@ function importWorkers(rows){
     var specRaw=ciSpec>=0?(row[ciSpec]||'').toString():'';
     var specKey=matchSpec(specRaw);
 
+    /* Fuzzy company match: trim + case-insensitive */
     var co=getCompanyByName(coName);
-    var companyId=co?co.id:''; /* empty = no company (valid for EUR-only) */
+    if(!co&&coName){
+      var coLow=coName.trim().toLowerCase();
+      for(var ci2=0;ci2<S.companies.length;ci2++){
+        if(S.companies[ci2].name.trim().toLowerCase()===coLow){co=S.companies[ci2];break;}
+      }
+    }
+    var companyId=co?co.id:'';
+    if(!co&&coName&&noCoMatch.indexOf(coName)<0) noCoMatch.push(coName);
 
     var dateStart=robustDate(ciStart>=0?row[ciStart]:null);
     var dateEnd=robustDate(ciEnd>=0?row[ciEnd]:null);
@@ -2105,7 +2205,10 @@ function importWorkers(rows){
     }
   }
   saveS();render();
-  alert('Import done: '+imported+' new, '+updated+' updated'+(skipped?' ('+skipped+' blank rows skipped)':'')+'.');
+  var msg='Import done: '+imported+' new, '+updated+' updated';
+  if(skipped) msg+=' ('+skipped+' blank rows skipped)';
+  if(noCoMatch.length) msg+='\n\nUnmatched companies (stored as empty):\n'+noCoMatch.slice(0,10).join(', ')+(noCoMatch.length>10?'...':'');
+  showToast(msg,'ok');
 }
 
 /* ============================================================
@@ -2450,74 +2553,96 @@ function renderAssignmentsPage(){
 }
 
 /* ============================================================
-   WORKER PICKER (inline dropdown)
+   WORKER PICKER MODAL
    ============================================================ */
 var pickerOpen=null;
 function openWP(el){openWorkerPicker(el,el.dataset.wbs,parseInt(el.dataset.m));}
-function openWorkerPicker(btn,wbsId,month){
-  /* Close any existing picker */
-  var old=document.getElementById('wpicker');
-  if(old) old.parentNode.removeChild(old);
-  if(pickerOpen&&pickerOpen.wbsId===wbsId&&pickerOpen.month===month){pickerOpen=null;return;}
-  pickerOpen={wbsId:wbsId,month:month};
 
-  /* Available workers: active this slot, not already assigned anywhere */
+function openWorkerPicker(btn,wbsId,month){
+  pickerOpen={wbsId:wbsId,month:month};
   var slotYr=ML[month]?ML[month].year:YEAR;
   var slotMo=ML[month]!==undefined?ML[month].month:month;
-  var available=[];
+  var slotLabel=ML[month]?ML[month].label:MS[month];
+
+  /* Find WBS name */
+  var wbsName=''; for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wbsId){wbsName=S.wbs[i].name;break;}
+  /* Currently assigned workers on this WBS this slot */
+  var assignedHere=getWBSWorkers(wbsId,month).map(function(w){return w.id;});
+
+  var box=document.getElementById('mbox');
+  var h='<div class="wk-pick-modal">';
+  h+='<h3>Assign workers — '+wbsName+'</h3>';
+  h+='<div class="subtitle">'+slotLabel+' &nbsp;·&nbsp; Click a worker to assign &nbsp;·&nbsp; Red = already assigned elsewhere</div>';
+
+  /* Foreman toggle */
+  h+='<div class="wk-pick-fm"><input type="checkbox" id="wpFm"><label for="wpFm" style="cursor:pointer;font-weight:600">&#9733; Assign as Foreman</label>';
+  h+='<span style="font-size:10px;color:var(--tx3);margin-left:8px">(one foreman per WBS per month)</span></div>';
+
+  /* Worker grid */
+  h+='<div class="wk-grid">';
   for(var i=0;i<S.workers.length;i++){
     var wk=S.workers[i];
-    if(!workerActiveInMonth(wk,slotMo,slotYr)) continue;
-    if(getAssignmentSlot(wk.id,month)) continue; /* already assigned */
-    available.push(wk);
-  }
+    var active=workerActiveInMonth(wk,slotMo,slotYr);
+    var asgn=getAssignmentSlot(wk.id,month);
+    var asgnHere=assignedHere.indexOf(wk.id)>=0;
+    var co=getCompany(wk.companyId); var coName=co?co.name:'';
+    var sl=specLabel(wk.spec);
 
-  var div=document.createElement('div');
-  div.id='wpicker';
-  div.className='wpick';
-
-  /* Foreman checkbox at top */
-  var fmRow=document.createElement('div');
-  fmRow.className='wpick-fm';
-  fmRow.innerHTML='<input type="checkbox" id="wpFm"><label for="wpFm" style="cursor:pointer">&#9733; Assign as Foreman</label>';
-  div.appendChild(fmRow);
-
-  if(available.length===0){
-    div.innerHTML='<div class="wpick-item"><span class="wi-name" style="color:var(--tx3)">No available workers this month</span></div>';
-  } else {
-    for(var i=0;i<available.length;i++){
-      (function(wk){
-        var item=document.createElement('div');
-        item.className='wpick-item';
-        var co=getCompany(wk.companyId);
-        var coName=co?co.name:'';
-        var sl=specLabel(wk.spec);
-        item.innerHTML='<div><div class="wi-name">'+wk.name+'</div><div class="wi-spec">'+coName+(sl?' / '+sl:'')+'</div></div>';
-        item.onclick=function(){
-          var isFm=document.getElementById('wpFm')&&document.getElementById('wpFm').checked;
-          assignWorker(wk.id,wbsId,month,isFm);
-          pickerOpen=null;
-          render();
-        };
-        div.appendChild(item);
-      })(available[i]);
+    if(!active){
+      /* Outside contract — show greyed out */
+      h+='<div class="wk-card" style="opacity:.4;cursor:not-allowed;background:var(--bg2)">';
+      h+='<span class="wc-badge oo">Out of contract</span>';
+      h+='<div class="wc-name">'+wk.name+'</div>';
+      h+='<div class="wc-meta">'+(coName||'—')+(sl?' · '+sl:'')+'</div>';
+      h+='</div>';
+    } else if(asgn&&!asgnHere){
+      /* Assigned elsewhere */
+      var onWBS=''; for(var j=0;j<S.wbs.length;j++) if(S.wbs[j].id===asgn.wbsId){onWBS=S.wbs[j].name;break;}
+      h+='<div class="wk-card assigned">';
+      h+='<span class="wc-badge as">'+onWBS+'</span>';
+      h+='<div class="wc-name">'+wk.name+'</div>';
+      h+='<div class="wc-meta">'+(coName||'—')+(sl?' · '+sl:'')+'</div>';
+      h+='</div>';
+    } else if(asgnHere){
+      /* Already on this WBS — show as assigned (click to remove) */
+      var isFm=getForeman(wbsId,month)&&getForeman(wbsId,month).workerId===wk.id;
+      h+='<div class="wk-card" style="border-color:var(--green);background:var(--gl);cursor:pointer" data-wid="'+wk.id+'" data-m="'+month+'" onclick="remAssignFromModal(this)">';
+      h+='<span class="wc-badge av">'+(isFm?'★ Foreman':'Assigned')+'</span>';
+      h+='<div class="wc-name">'+wk.name+'</div>';
+      h+='<div class="wc-meta">'+(coName||'—')+(sl?' · '+sl:'')+'&nbsp;· Click to remove</div>';
+      h+='</div>';
+    } else {
+      /* Available */
+      h+='<div class="wk-card available" data-wid="'+wk.id+'" data-wbs="'+wbsId+'" data-m="'+month+'" onclick="doAssignFromModal(this)">';
+      h+='<div class="wc-name">'+wk.name+'</div>';
+      h+='<div class="wc-meta">'+(coName||'—')+(sl?' · '+sl:'')+'</div>';
+      h+='</div>';
     }
   }
+  h+='</div>'; /* end wk-grid */
+  h+='<div class="ma"><button class="btn" onclick="closeModal()">Close</button></div>';
+  h+='</div>';
 
-  /* Close on outside click */
-  setTimeout(function(){
-    document.addEventListener('click',function closePicker(e){
-      if(!div.contains(e.target)&&e.target!==btn){
-        if(div.parentNode) div.parentNode.removeChild(div);
-        document.removeEventListener('click',closePicker);
-        pickerOpen=null;
-      }
-    });
-  },0);
-
-  btn.parentNode.style.position='relative';
-  btn.parentNode.appendChild(div);
+  box.innerHTML=h;
+  document.getElementById('mbg').style.display='flex';
 }
+
+function remAssignFromModal(el){
+  var wid=el.dataset.wid; var m=parseInt(el.dataset.m);
+  if(!confirm('Remove this worker from this month?')) return;
+  var rYr=ML[m]?ML[m].year:YEAR;
+  var rMo=ML[m]!==undefined?ML[m].month:m;
+  S.assignments=S.assignments.filter(function(a){return !(a.workerId===wid&&a.month===rMo&&a.year===rYr);});
+  /* Re-open picker to show updated state */
+  openWorkerPicker(null,pickerOpen.wbsId,pickerOpen.month);
+}
+function doAssignFromModal(el){
+  var workerId=el.dataset.wid,wbsId=el.dataset.wbs,month=parseInt(el.dataset.m);
+  var isFm=document.getElementById('wpFm')&&document.getElementById('wpFm').checked;
+  assignWorker(workerId,wbsId,month,isFm);
+  openWorkerPicker(null,wbsId,month);
+}
+
 
 function remAssign(el){removeAssignment(el.dataset.wid,parseInt(el.dataset.m));}
 function removeAssignment(workerId,month){
@@ -2715,11 +2840,12 @@ function addSpec(){
 
 function saveSettings(){
   var y=parseInt(document.getElementById('sYear').value)||2025;
-  var sm=parseInt(document.getElementById('sStartM').value)||0;
+  var _sm=parseInt(document.getElementById('sStartM').value); var sm=isNaN(_sm)?0:_sm;
   S.settings.startYear=y;
   S.settings.startMonth=sm;
   S.settings.endYear=parseInt(document.getElementById('sEndY').value)||y;
-  S.settings.endMonth=parseInt(document.getElementById('sEndM').value)||11;
+  var _em=parseInt(document.getElementById('sEndM').value);
+  S.settings.endMonth=isNaN(_em)?11:_em;
   /* validate: end must be after start */
   if(S.settings.endYear<y||(S.settings.endYear===y&&S.settings.endMonth<sm)){
     S.settings.endYear=y; S.settings.endMonth=11;
@@ -2734,6 +2860,88 @@ function saveSettings(){
   }
   closeModal();
   render();
+}
+
+
+/* ============================================================
+   BACKUP EXPORT / IMPORT
+   ============================================================ */
+
+function exportBackup(){
+  var now=new Date();
+  var stamp=now.getFullYear()+
+    ('0'+(now.getMonth()+1)).slice(-2)+
+    ('0'+now.getDate()).slice(-2)+'_'+
+    ('0'+now.getHours()).slice(-2)+
+    ('0'+now.getMinutes()).slice(-2);
+  var sy=S.settings&&S.settings.startYear?S.settings.startYear:'proj';
+  var filename='manpower_backup_'+sy+'_'+stamp+'.json';
+
+  /* Full snapshot of S with metadata */
+  var backup={
+    _version:2,
+    _exported:now.toISOString(),
+    _app:'Manpower Followup',
+    data:S
+  };
+
+  var json=JSON.stringify(backup,null,2);
+  var blob=new Blob([json],{type:'application/json'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url; a.download=filename; a.click();
+  setTimeout(function(){URL.revokeObjectURL(url);},1000);
+  /* Show confirmation */
+  showToast('Backup saved: '+filename,'ok');
+}
+
+function triggerImport(){
+  var el=document.getElementById('importFileInput');
+  if(el) el.value=''; /* reset so same file can be re-imported */
+  if(el) el.click();
+}
+
+function importBackup(file){
+  if(!file) return;
+  if(!file.name.endsWith('.json')){
+    showToast('Please select a .json backup file','warn');
+    return;
+  }
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var parsed=JSON.parse(e.target.result);
+      /* Accept both raw S object and wrapped backup */
+      var raw=parsed.data||parsed;
+      if(!raw||!raw.wbs){
+        showToast('Invalid backup file — missing WBS data','warn');
+        return;
+      }
+      /* Confirm before overwriting */
+      var msg='Import backup from '+(parsed._exported?new Date(parsed._exported).toLocaleString():'unknown date')+'?\n\nThis will REPLACE all current data.';
+      if(!confirm(msg)) return;
+      var migrated=migrate(raw);
+      if(!migrated){showToast('Migration failed — check file format','warn');return;}
+      S=migrated;
+      applySettings();
+      saveS(); /* push to Firebase + localStorage */
+      render();
+      showToast('Import successful — '+S.wbs.length+' WBS, '+S.workers.length+' workers','ok');
+    }catch(err){
+      showToast('Error reading file: '+err.message,'warn');
+      console.error('Import error:',err);
+    }
+  };
+  reader.readAsText(file,'utf-8');
+}
+
+function showToast(msg,type){
+  var el=document.createElement('div');
+  var bg=type==='ok'?'#3a7d54':'#a84040';
+  el.textContent=msg;
+  el.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:'+bg+';color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.2);transition:opacity .4s;max-width:420px;text-align:center;';
+  document.body.appendChild(el);
+  setTimeout(function(){el.style.opacity='0';setTimeout(function(){el.remove();},400);},3000);
 }
 
 /* ============================================================
