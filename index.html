@@ -194,6 +194,7 @@ td.edt:empty::after{content:'—';color:var(--border2);font-family:var(--mono);f
 .sk-STEEL{background:#e4ecf5;color:#2a4a6a;border-color:#8aacca;}
 .sk-HELP{background:#eeecea;color:#4a4440;border-color:#b8b0a8;}
 .sk-FINISH{background:#e6f0e4;color:#245a20;border-color:#78b060;}
+.sk-DRY{background:#e8f0f5;color:#2a4a6a;border-color:#7a9ec0;}
 
 .tog{width:18px;height:18px;border-radius:5px;cursor:pointer;background:var(--white);border:1.5px solid var(--border2);display:inline-flex;align-items:center;justify-content:center;font-size:9px;color:var(--tx3);flex-shrink:0;}
 .tog:hover{background:var(--bg2);}
@@ -673,7 +674,8 @@ function buildDefault(){
       {key:'CARP',label:'Carpenters'},
       {key:'STEEL',label:'Steelfixers'},
       {key:'HELP',label:'Helpers'},
-      {key:'FINISH',label:'Finishers'}
+      {key:'FINISH',label:'Finishers'},
+      {key:'DRY',label:'Dry Wall'}
     ],
     settings:{startYear:2025,startMonth:0,endYear:2025,endMonth:11}
   };
@@ -703,8 +705,13 @@ function migrate(s){
   s.assignments.forEach(function(a){if(a.isForeman===undefined)a.isForeman=false;});
   if(!s.specs||!s.specs.length)s.specs=[
     {key:'CARP',label:'Carpenters'},{key:'STEEL',label:'Steelfixers'},
-    {key:'HELP',label:'Helpers'},{key:'FINISH',label:'Finishers'}
+    {key:'HELP',label:'Helpers'},{key:'FINISH',label:'Finishers'},
+    {key:'DRY',label:'Dry Wall'}
   ];
+  /* Add DRY if missing from existing specs */
+  var hasDry=false;
+  for(var si2=0;si2<s.specs.length;si2++) if(s.specs[si2].key==='DRY'){hasDry=true;break;}
+  if(!hasDry) s.specs.push({key:'DRY',label:'Dry Wall'});
   if(!s.settings)s.settings={startYear:2025,startMonth:0,endYear:2025,endMonth:11};
   if(s.settings.startMonth===undefined)s.settings.startMonth=0;
   /* migrate old single-year settings */
@@ -2049,48 +2056,94 @@ function handleXLSX(file){
    Name, Company, Specialty, Contract Start, Contract End, Revised End */
 function importWorkers(rows){
   if(!rows||rows.length<2){alert('Empty file or no data');return;}
-  var header=rows[0].map(function(h){return (h||'').toString().trim().toLowerCase();});
+
+  /* Find header row — first row with recognisable column names */
+  var headerIdx=0;
+  var header=[];
+  for(var hi=0;hi<Math.min(5,rows.length);hi++){
+    var row=rows[hi];
+    if(!row) continue;
+    var joined=(row.map(function(v){return (v||'').toString().toLowerCase();}).join('|'));
+    if(joined.indexOf('name')>=0||joined.indexOf('nom')>=0||joined.indexOf('worker')>=0){
+      header=row.map(function(h){return (h||'').toString().trim().toLowerCase();});
+      headerIdx=hi;
+      break;
+    }
+  }
+  if(!header.length){alert('No header row found in first 5 rows.');return;}
 
   function col(names){
     for(var ni=0;ni<names.length;ni++){
+      /* exact match */
       var idx=header.indexOf(names[ni]);
       if(idx>=0) return idx;
+      /* partial match */
+      for(var j=0;j<header.length;j++){
+        if(header[j]&&header[j].indexOf(names[ni])>=0) return j;
+      }
     }
     return -1;
   }
 
-  /* Detect Name vs Name+Surname columns */
-  var ciFirst=col(['first name','firstname','prenom','first']);
-  var ciLast=col(['last name','lastname','surname','nom de famille','last']);
-  var ciName=col(['name','nom','worker','worker name','full name']);
-  var ciId=col(['id','worker id','employee id','matricule','staff id']);
-  var ciCo=col(['company','entreprise','employer','société','societe']);
-  var ciSpec=col(['specialty','specialite','speciality','trade','metier']);
-  var ciStart=col(['contract start','start','date debut','debut','start date','date de debut']);
-  var ciEnd=col(['contract end','end','date fin','fin','end date','date de fin','fin contrat']);
-  var ciRev=col(['revised end','fin revisee','revised','prolongation','new end','fin revisee']);
+  /* Detect column positions */
+  var ciFirst=col(['first name','firstname','prenom','given name','first','prénom']);
+  var ciLast=col(['last name','lastname','surname','family name','nom de famille','last','family']);
+  var ciName=col(['full name','name','nom','worker name','worker']);
+  /* If we have BOTH a "name" column AND a "first" or "surname" column,
+     treat name as last name and the other as first name */
+  if(ciName>=0&&ciFirst>=0&&ciLast<0){ ciLast=ciName; }
+  if(ciName>=0&&ciLast>=0&&ciFirst<0){ /* name=last, ciLast already set */ }
+  var ciId=col(['id','worker id','employee id','matricule','staff id','badge']);
+  var ciCo=col(['company','entreprise','employer','société','societe','contractor']);
+  var ciSpec=col(['specialty','specialite','speciality','trade','metier','skill']);
+  var ciStart=col(['contract start','start date','date debut','debut','start']);
+  var ciEnd=col(['contract end','end date','date fin','fin contrat','end']);
+  var ciRev=col(['revised end','fin revisee','revised','prolongation','new end','extension']);
 
-  var hasFirstLast=(ciFirst>=0&&ciLast>=0);
+  /* Special handling for this DSS file:
+     - Col A (0) = Surname, Col H (7) = First name — detect this pattern */
+  var hasSurnameFirstname=false;
+  if(ciName>=0&&ciFirst<0&&ciLast<0){
+    /* Check if there's a non-header column H with names */
+    var sampleRow=rows[headerIdx+1];
+    if(sampleRow&&sampleRow[7]&&typeof sampleRow[7]==='string'&&
+       /^[A-Z\s\-]+$/i.test(sampleRow[7].trim())&&
+       sampleRow[7].trim()!=='-'){
+      /* Col H has names → treat as first name, col A as last name */
+      hasSurnameFirstname=true;
+    }
+  }
+
+  var hasFirstLast=(ciFirst>=0&&ciLast>=0)||hasSurnameFirstname;
+  var _ciLast=ciLast>=0?ciLast:(ciName>=0?ciName:0);
+  var _ciFirst=ciFirst>=0?ciFirst:(hasSurnameFirstname?7:-1);
+
   if(!hasFirstLast&&ciName<0){
-    alert('Column "Name" not found. Headers: '+header.join(', '));
+    alert('Could not find Name column.\nHeaders found: '+header.join(', '));
     return;
   }
 
   /* Build specialty map from current S.specs + common aliases */
   function matchSpec(raw){
     if(!raw) return '';
-    var up=raw.trim().toUpperCase();
-    /* Try exact key match first */
-    for(var i=0;i<SPECS.length;i++) if(SPECS[i].key===up) return SPECS[i].key;
-    /* Try label match */
-    for(var i=0;i<SPECS.length;i++) if(up.indexOf(SPECS[i].key)>=0) return SPECS[i].key;
-    /* Try label partial */
-    for(var i=0;i<SPECS.length;i++) if(up.indexOf(SPECS[i].label.toUpperCase().slice(0,4))>=0) return SPECS[i].key;
-    /* Legacy aliases */
+    var up=raw.trim().toUpperCase().replace(/\s+/g,' ');
+    /* Try exact key match */
+    for(var i=0;i<SPECS.length;i++) if(SPECS[i].key.toUpperCase()===up) return SPECS[i].key;
+    /* Try label match (case-insensitive) */
+    for(var i=0;i<SPECS.length;i++) if(SPECS[i].label.toUpperCase()===up) return SPECS[i].key;
+    /* Try S.specs partial match */
+    for(var i=0;i<SPECS.length;i++) if(up.indexOf(SPECS[i].key.toUpperCase())>=0) return SPECS[i].key;
+    for(var i=0;i<SPECS.length;i++) if(up.indexOf(SPECS[i].label.toUpperCase().slice(0,5))>=0) return SPECS[i].key;
+    /* Common aliases — add as many variants as needed */
     if(up.indexOf('CARP')>=0) return 'CARP';
-    if(up.indexOf('STEEL')>=0||up.indexOf('FIX')>=0) return 'STEEL';
-    if(up.indexOf('HELP')>=0) return 'HELP';
-    if(up.indexOf('FINISH')>=0) return 'FINISH';
+    if(up==='CARPENTER') return 'CARP';
+    if(up==='TL'||up==='TEAM LEADER') return '';  /* role, not specialty */
+    if(up.indexOf('STEEL')>=0||up.indexOf('FIXER')>=0||up.indexOf('FITTER')>=0) return 'STEEL';
+    if(up.indexOf('HELP')>=0||up.indexOf('HELPER')>=0) return 'HELP';
+    if(up.indexOf('FINISH')>=0||up.indexOf('FINISHER')>=0) return 'FINISH';
+    if(up.indexOf('DRY')>=0||up.indexOf('DRY WALL')>=0) return 'DRY';
+    if(up.indexOf('ELECT')>=0) return 'HELP'; /* Electrician → map or create new spec */
+    /* Return as-is if no match — import will store empty */
     return '';
   }
 
@@ -2116,17 +2169,25 @@ function importWorkers(rows){
     if(typeof val==='string'){
       var s=val.trim();
       if(!s) return null;
-      /* DD/MM/YYYY or D/M/YYYY */
-      var p=s.split('/');
-      if(p.length===3){
-        /* Try DD/MM/YYYY first */
-        if(p[0].length<=2&&parseInt(p[1])<=12){
-          var d2=new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]));
-          if(!isNaN(d2.getTime())&&d2.getFullYear()>1900) return d2;
+      /* Try separators: / . - space */
+      var sep=s.indexOf('/')>=0?'/':s.indexOf('.')>=0?'.':s.indexOf('-')>=0&&s.length<=10?'-':null;
+      if(sep){
+        var p=s.split(sep);
+        if(p.length===3){
+          var d_=parseInt(p[0]),m_=parseInt(p[1]),y_=parseInt(p[2]);
+          /* 2-digit year: 25→2025, 26→2026 etc */
+          if(y_<100) y_=y_<50?2000+y_:1900+y_;
+          /* Try DD/MM/YYYY first (day<=31, month<=12) */
+          if(d_<=31&&m_<=12){
+            var d2=new Date(y_,m_-1,d_);
+            if(!isNaN(d2.getTime())&&d2.getFullYear()>1900) return d2;
+          }
+          /* Try MM/DD/YYYY */
+          if(m_<=31&&d_<=12){
+            var d3=new Date(y_,d_-1,m_);
+            if(!isNaN(d3.getTime())&&d3.getFullYear()>1900) return d3;
+          }
         }
-        /* Try MM/DD/YYYY */
-        var d3=new Date(parseInt(p[2]),parseInt(p[0])-1,parseInt(p[1]));
-        if(!isNaN(d3.getTime())&&d3.getFullYear()>1900) return d3;
       }
       /* DD-MM-YYYY or YYYY-MM-DD */
       var p2=s.split('-');
@@ -2147,18 +2208,32 @@ function importWorkers(rows){
   }
 
   var imported=0,updated=0,skipped=0,noCoMatch=[];
-  for(var ri=1;ri<rows.length;ri++){
+  for(var ri=headerIdx+1;ri<rows.length;ri++){
     var row=rows[ri];
+    if(!row||!row.length) continue;
     /* Build full name */
     var name='';
-    if(hasFirstLast){
-      var fn=(row[ciFirst]||'').toString().trim();
-      var ln=(row[ciLast]||'').toString().trim();
-      name=(fn+' '+ln).trim();
-    } else {
-      name=(row[ciName]||'').toString().trim();
+    if(hasSurnameFirstname){
+      /* DSS format: col A=surname, col H=firstname */
+      var surname=(row[_ciLast]||'').toString().trim();
+      var firstname=(row[_ciFirst]||'').toString().trim();
+      if(firstname==='-'||firstname.toLowerCase()===surname.toLowerCase()) firstname='';
+      name=firstname?firstname+' '+surname:surname;
+    } else if(ciFirst>=0&&ciLast>=0){
+      /* Two separate columns — merge Firstname + Lastname */
+      var fn2=(row[ciFirst]||'').toString().trim();
+      var ln2=(row[ciLast]||'').toString().trim();
+      if(fn2==='-') fn2='';
+      if(ln2==='-') ln2='';
+      name=(fn2+' '+ln2).trim();
+    } else if(ciName>=0){
+      name=(ciName>=0?(row[ciName]||''):'').toString().trim();
     }
-    if(!name){skipped++;continue;}
+    name=name.trim();
+    /* Skip empty, formula rows, or numeric-only rows */
+    if(!name||name.charAt(0)==='='||!isNaN(+name)){skipped++;continue;}
+    /* Skip rows where name column is clearly not a person name */
+    if(name.length<2){skipped++;continue;}
 
     var workerId=ciId>=0?(row[ciId]||'').toString().trim():'';
     var coName=ciCo>=0?(row[ciCo]||'').toString().trim():'';
