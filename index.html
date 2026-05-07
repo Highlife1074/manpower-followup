@@ -382,7 +382,7 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .wk-pick-fm-wrap{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--tx2);}
 
 /* Sub-rows (multi-specialty per WBS) */
-.rsubrow td{height:22px;background:#f5f7ff;border-bottom:1px solid var(--border);border-right:1px solid var(--border);}
+.rsubrow td{height:24px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);}
 .add-subrow-btn{font-size:10px;color:var(--blue);cursor:pointer;padding:1px 6px;border-radius:6px;border:1px dashed var(--bm);display:inline-block;margin-left:6px;}
 .add-subrow-btn:hover{background:var(--bl);}
 </style>
@@ -1014,13 +1014,12 @@ function sgRow(sg,sgW,locked){
 }
 
 function wbsBudRows(w,lv,locked,isLastInGroup){
-  var ind=lv===1?16:36; var bt=addBudget(w);
-  var c=getCompany(w.companyId); var cname=c?c.name:'?'; var ck=ckey(cname);
-  var sl=specLabel(w.spec);
+  var ind=lv===1?16:36;
+  var co=getCompany(w.companyId); var cname=co?co.name:'?';
+  var cbg=co&&co.bg?co.bg:'var(--bl)'; var cco2=co&&co.co?co.co:'var(--blue)';
   var h='';
-  var lastCls=isLastInGroup?' style="border-bottom:var(--group-sep)"':'';
 
-  /* WBS header */
+  /* ── WBS header row (name + company, no spec — spec is per sub-row) ── */
   h+='<tr class="rwbs" '+(locked?'':drag('W',w.id))+'>';
   h+='<td class="p1" style="padding-left:'+ind+'px;border-right:2px solid var(--border2)"><div class="ar">';
   if(w.code)h+='<span class="codb">'+w.code+'</span>';
@@ -1030,73 +1029,105 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
   h+='</div>';
   if(!locked){h+='<button class="bic" onclick="openModal(\'eW\',\''+w.id+'\')" style="width:19px;height:19px;font-size:9px">e</button><button class="bic del" onclick="delW(\''+w.id+'\')" style="width:19px;height:19px;font-size:9px">x</button>';}
   h+='</div></td>';
-  /* company preview (auto-color from company object) */
-  var cbg=c&&c.bg?c.bg:'var(--bl)'; var cco=c&&c.co?c.co:'var(--blue)';
-  h+='<td class="p2" style="border-right:1px solid var(--border2)"><span class="cie" style="background:'+cbg+';color:'+cco+'">'+cname+'</span></td>';
-  /* specialty */
-  h+='<td class="p3" style="border-right:1px solid var(--border2);padding:2px 6px">';
-  if(!locked){
-    var spO='';for(var i=0;i<SPECS.length;i++)spO+='<option value="'+SPECS[i].key+'"'+(w.spec===SPECS[i].key?' selected':'')+'>'+SPECS[i].label+'</option>';
-    h+='<select class="spsel sk-'+w.spec+'" onchange="changeSpec(\''+w.id+'\',this)">'+spO+'</select>';
-  } else if(sl){h+='<span class="spsel sk-'+w.spec+'" style="cursor:default">'+sl+'</span>';}
-  h+='</td>';
-  h+='<td class="p4 num mut" style="border-right:2px solid var(--border2)">'+w.pu.toFixed(2)+'</td>';
-  h+='<td class="num mut" style="border-right:2px solid var(--border2)">--</td>';
-  for(var m=0;m<NM;m++)h+='<td class="'+(locked?'lk':'')+'"></td>';
+  h+='<td class="p2" style="border-right:1px solid var(--border2)"><span class="cie" style="background:'+cbg+';color:'+cco2+'">'+cname+'</span></td>';
+  h+='<td class="p3" style="border-right:1px solid var(--border2)"></td>';
+  h+='<td class="p4" style="border-right:2px solid var(--border2)"></td>';
+  h+='<td class="p5 num mut" style="border-right:2px solid var(--border2)">--</td>';
+  for(var m=0;m<NM;m++) h+='<td class="'+(locked?'lk':'')+'"></td>';
   h+='</tr>';
 
-  /* Budget cells */
-  var budCols='';
-  for(var m=0;m<NM;m++){
-    var v=bud(w,m); var idx=m; var wid=w.id;
-    if(locked)budCols+='<td class="lk num" style="color:var(--tx3)">'+f1(v)+'</td>';
-    else budCols+='<td class="edt num" style="color:var(--blue)" data-wid="'+wid+'" data-key="b'+idx+'" data-type="bud" onclick="ecBud(this,\''+wid+'\','+idx+','+v+')">'+f1(v)+'</td>';
+  /* ── Helper to render one specialty row (main or subrow) ── */
+  function specRow(rowId, spec, pu, budFn, editFn, isMain){
+    var sl2=specLabel(spec);
+    var rowTotal=0; for(var m=0;m<NM;m++) rowTotal+=budFn(m);
+    var cols='';
+    for(var m=0;m<NM;m++){
+      var v=budFn(m);
+      if(locked) cols+='<td class="lk num" style="color:var(--tx3)">'+(v?v.toFixed(1):'')+'</td>';
+      else cols+='<td class="edt num" style="color:var(--blue)" '+editFn(m)+'>'+( v?v.toFixed(1):'')+'</td>';
+    }
+    var rowBg=isMain?'background:var(--white)':'background:#f5f7fb';
+    h+='<tr class="rsubrow" style="'+rowBg+'">';
+    h+='<td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)">';
+    if(!isMain){
+      h+='<span class="tp" style="background:var(--pl);color:var(--pur);margin-right:4px">'+(sl2||'?')+'</span>';
+      if(!locked) h+='<button class="bic del" style="width:16px;height:16px;font-size:8px" onclick="delSubRow(\''+w.id+'\',\''+rowId+'\')">x</button>';
+    } else {
+      /* Main specialty row — show select if unlocked */
+      if(!locked){
+        var spO='';for(var i=0;i<SPECS.length;i++) spO+='<option value="'+SPECS[i].key+'"'+(spec===SPECS[i].key?' selected':'')+'>'+SPECS[i].label+'</option>';
+        h+='<select class="spsel sk-'+spec+'" style="font-size:10px" onchange="changeSpec(\''+w.id+'\',this)">'+spO+'</select>';
+      } else {
+        h+='<span class="spsel sk-'+spec+'" style="cursor:default;font-size:10px">'+(sl2||'—')+'</span>';
+      }
+    }
+    h+='</td>';
+    /* Specialty badge col */
+    if(isMain){
+      h+='<td class="p2" style="border-right:1px solid var(--border2)"></td>';
+    } else {
+      h+='<td class="p2" style="border-right:1px solid var(--border2)"><span class="spsel sk-'+spec+'" style="cursor:default;font-size:10px">'+(sl2||'—')+'</span></td>';
+    }
+    h+='<td class="p3" style="border-right:1px solid var(--border2)"></td>';
+    h+='<td class="p4 num mut" style="border-right:2px solid var(--border2)">'+(pu?pu.toFixed(2):'')+'</td>';
+    h+='<td class="p5 num" style="color:var(--blue);font-weight:600;border-right:2px solid var(--border2)">'+(rowTotal?rowTotal.toFixed(1):'')+'</td>';
+    h+=cols+'</tr>';
   }
-  h+='<tr class="rbud"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpb">Budget HM</span></td>';
-  h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td><td class="p4" style="border-right:2px solid var(--border2)"></td>';
-  h+='<td class="p5 num" style="color:var(--blue);font-weight:700;border-right:2px solid var(--border2)">'+bt.toFixed(1)+'</td>'+budCols+'</tr>';
 
-  /* EUR budget row */
+  /* ── Main specialty row ── */
+  if(!w.eurOnly){
+    specRow(w.id, w.spec, w.pu,
+      function(m){return bud(w,m);},
+      function(m){return 'data-wid="'+w.id+'" data-key="b'+m+'" data-type="bud" data-m="'+m+'" onclick="ecBud(this,\''+w.id+'\','+m+','+bud(w,m)+')"';},
+      true
+    );
+  }
+
+  /* ── Additional specialty subRows ── */
+  if(w.subRows){
+    for(var sri=0;sri<w.subRows.length;sri++){
+      var sr=w.subRows[sri];
+      (function(sr2){
+        specRow(sr2.id, sr2.spec, sr2.pu,
+          function(m){return subRowBudAtSlot(sr2,m);},
+          function(m){return 'data-wid="'+w.id+'" data-srid="'+sr2.id+'" data-key="sr'+m+'" data-type="bud-sub" data-m="'+m+'" onclick="ecSubRow(this)"';},
+          false
+        );
+      })(sr);
+    }
+  }
+
+  /* ── Add specialty line button ── */
+  if(!locked){
+    h+='<tr style="background:var(--bg2)">';
+    h+='<td class="p1" colspan="5" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)">';
+    h+='<span class="add-subrow-btn" onclick="addSubRow(\''+w.id+'\')">+ Add specialty line</span>';
+    h+='</td>';
+    for(var m=0;m<NM;m++) h+='<td style="background:var(--bg2);border-right:1px solid var(--border)"></td>';
+    h+='</tr>';
+  }
+
+  /* ── Budget HM total (auto-sum, read-only) ── */
+  var bt=wbsTotalBudget(w);
+  var sumCols='';
+  for(var m=0;m<NM;m++){
+    var ms=bud(w,m); if(w.subRows) for(var sri=0;sri<w.subRows.length;sri++) ms+=subRowBudAtSlot(w.subRows[sri],m);
+    sumCols+='<td class="lk num" style="color:var(--blue);font-weight:600">'+(ms?ms.toFixed(1):'')+'</td>';
+  }
+  h+='<tr class="rbud"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpb">&#931; Budget HM</span></td>';
+  h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td><td class="p4" style="border-right:2px solid var(--border2)"></td>';
+  h+='<td class="p5 num" style="color:var(--blue);font-weight:800;border-right:2px solid var(--border2)">'+(bt?bt.toFixed(1):'0')+'</td>'+sumCols+'</tr>';
+
+  /* ── Budget EUR (free entry) ── */
   var budEurCols=''; var btEur=addBudgetEurSlots(w);
   for(var m=0;m<NM;m++){
     var ve=getBudEur(w,m); var wid2=w.id;
-    if(locked) budEurCols+='<td class="lk num" style="color:var(--tx3)">'+( ve?ve.toFixed(0):'')+'</td>';
+    if(locked) budEurCols+='<td class="lk num" style="color:var(--tx3)">'+(ve?ve.toFixed(0):'')+'</td>';
     else budEurCols+='<td class="edt num" style="color:var(--amber)" data-wid="'+wid2+'" data-key="e'+m+'" data-type="bud-eur" data-m="'+m+'" onclick="openEdtEur(this)">'+(ve?ve.toFixed(0):'')+'</td>';
   }
   h+='<tr class="rbud"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp" style="background:var(--ambl);color:var(--amber)">Budget EUR</span></td>';
   h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td><td class="p4" style="border-right:2px solid var(--border2)"></td>';
   h+='<td class="p5 num" style="color:var(--amber);font-weight:700;border-right:2px solid var(--border2)">'+(btEur?btEur.toFixed(0):'')+'</td>'+budEurCols+'</tr>';
-
-  /* SubRows */
-  if(w.subRows&&w.subRows.length>0){
-    for(var sri=0;sri<w.subRows.length;sri++){
-      var sr=w.subRows[sri]; var srBt=addSubRowBudget(sr); var srSl=specLabel(sr.spec);
-      var srCols='';
-      for(var m=0;m<NM;m++){
-        var sv=subRowBudAtSlot(sr,m);
-        if(locked) srCols+='<td class="lk num" style="color:var(--tx3)">'+(sv?sv.toFixed(1):'')+'</td>';
-        else srCols+='<td class="edt num" style="color:var(--blue)" data-wid="'+w.id+'" data-srid="'+sr.id+'" data-key="sr'+m+'" data-type="bud-sub" data-m="'+m+'" onclick="ecSubRow(this)">'+(sv?sv.toFixed(1):'')+'</td>';
-      }
-      h+='<tr class="rsubrow">';
-      h+='<td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)">';
-      h+='<span class="tp tpb" style="background:var(--pl);color:var(--pur)">+ '+(srSl||'Specialty')+'</span>';
-      if(!locked) h+='<button class="bic del" onclick="delSubRow(\''+w.id+'\',\''+sr.id+'\')">x</button>';
-      h+='</td>';
-      h+='<td class="p2" style="border-right:1px solid var(--border2)"><span class="spsel sk-'+sr.spec+'" style="cursor:default;font-size:10px">'+(srSl||'—')+'</span></td>';
-      h+='<td class="p3" style="border-right:1px solid var(--border2)"></td>';
-      h+='<td class="p4 num mut" style="border-right:2px solid var(--border2)">'+sr.pu.toFixed(2)+'</td>';
-      h+='<td class="p5 num" style="color:var(--blue);font-weight:600;border-right:2px solid var(--border2)">'+(srBt?srBt.toFixed(1):'')+'</td>';
-      h+=srCols+'</tr>';
-    }
-  }
-  /* Add subrow button */
-  if(!locked){
-    h+='<tr class="rsubrow"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2);background:var(--bg)">';
-    h+='<span class="add-subrow-btn" onclick="addSubRow(\''+w.id+'\')">+ Add specialty line</span>';
-    h+='</td>';
-    for(var m=0;m<NM+4;m++) h+='<td style="background:var(--bg);border-right:1px solid var(--border)"></td>';
-    h+='</tr>';
-  }
 
   /* Last WBS: thick separator */
   if(isLastInGroup){
