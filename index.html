@@ -117,7 +117,9 @@ th.p1,td.p1{background:var(--bg2);}
 .rvar td.p1,.rvar td.p2,.rvar td.p3,.rvar td.p4{background:#f8f6f2!important;}
 .rwbs td.p1,.rwbs td.p2,.rwbs td.p3,.rwbs td.p4{background:var(--white)!important;}
 /* Also add a 5th sticky column for CC (Variance) */
-.p5{position:sticky;left:540px;z-index:12;background:inherit;}
+.p5{position:sticky;left:540px;z-index:12;background:inherit;border-right:3px solid var(--border3)!important;}
+/* The vertical wall separator — all p5 cells get thick right border */
+td.p5,th.p5{border-right:3px solid #8a8070!important;}
 .rg td.p5{background:#3d5a80!important;}
 .rg2 td.p5{background:#3a7d54!important;}
 .rg3 td.p5{background:#f8f4ef!important;}
@@ -385,6 +387,28 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .rsubrow td{height:24px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);}
 .add-subrow-btn{font-size:10px;color:var(--blue);cursor:pointer;padding:1px 6px;border-radius:6px;border:1px dashed var(--bm);display:inline-block;margin-left:6px;}
 .add-subrow-btn:hover{background:var(--bl);}
+
+/* Company badge select — same pill style as specialty */
+.co-sel-wrap{position:relative;display:inline-flex;align-items:center;}
+.co-sel-wrap select{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:12px;width:100%;}
+.co-badge{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;cursor:pointer;white-space:nowrap;transition:box-shadow .14s;}
+.co-badge:hover{box-shadow:0 0 0 3px rgba(61,90,128,.15);}
+.co-badge::after{content:'▾';margin-left:4px;font-size:9px;opacity:.7;}
+
+/* WBS block alternating backgrounds */
+.wbs-even .rwbs td,.wbs-even .rbud td,.wbs-even .rre td,.wbs-even .rvar td,.wbs-even .rsubrow td{
+  background-color:#faf9f6!important;}
+.wbs-odd .rwbs td,.wbs-odd .rbud td,.wbs-odd .rre td,.wbs-odd .rvar td,.wbs-odd .rsubrow td{
+  background-color:#f3f1ec!important;}
+/* Keep colored columns (p1-p5) consistent within their row type */
+.wbs-even .rbud td.p1,.wbs-even .rbud td.p2,.wbs-even .rbud td.p3,.wbs-even .rbud td.p4,.wbs-even .rbud td.p5{background:#f7f5f0!important;}
+.wbs-odd  .rbud td.p1,.wbs-odd  .rbud td.p2,.wbs-odd  .rbud td.p3,.wbs-odd  .rbud td.p4,.wbs-odd  .rbud td.p5{background:#eceae4!important;}
+.wbs-even .rre td.p1,.wbs-even .rre td.p2,.wbs-even .rre td.p3,.wbs-even .rre td.p4,.wbs-even .rre td.p5{background:#f3f8f4!important;}
+.wbs-odd  .rre td.p1,.wbs-odd  .rre td.p2,.wbs-odd  .rre td.p3,.wbs-odd  .rre td.p4,.wbs-odd  .rre td.p5{background:#ecf5ee!important;}
+/* WBS header top border — thin separator between WBS blocks */
+.wbs-even .rwbs td,.wbs-odd .rwbs td{border-top:2px solid var(--border3)!important;}
+/* Group separator row — strong top border */
+.group-sep-row td{border-top:4px solid #8a8070!important;background:var(--bg)!important;height:4px!important;}
 </style>
 </head>
 <body>
@@ -958,6 +982,7 @@ function budHead(){
 
 function budBody(locked){
   var h='';
+  window._wbsIdx=0; /* counter for alternating colors */
   /* Grand total */
   var cols=''; var gt=0;
   for(var m=0;m<NM;m++){var s=0;for(var i=0;i<S.wbs.length;i++)s+=bud(S.wbs[i],m);cols+='<td class="num" style="color:#fff;font-weight:700">'+f1(s)+'</td>';gt+=s;}
@@ -970,6 +995,8 @@ function budBody(locked){
   for(var gi=0;gi<S.groups.length;gi++){
     var g=S.groups[gi]; var allW=getAllW(g);
     var isFirst=gi===0;
+    /* Group separator row */
+    if(!isFirst) h+='<tr class="group-sep-row"><td colspan="'+(5+NM+1)+'"></td></tr>';
     h+=grpRow(g,allW,locked,isFirst);
     if(!g.col){
       var dw=filterW(g.id);
@@ -1018,10 +1045,14 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
   var ind=lv===1?16:36;
   var co=getCompany(w.companyId); var cname=co?co.name:'?';
   var cbg=co&&co.bg?co.bg:'var(--bl)'; var cco2=co&&co.co?co.co:'var(--blue)';
+  /* Alternating WBS block color */
+  if(window._wbsIdx===undefined) window._wbsIdx=0;
+  var wbsCls=(window._wbsIdx%2===0)?'wbs-even':'wbs-odd';
+  window._wbsIdx++;
   var h='';
 
   /* ── WBS header row (name + company, no spec — spec is per sub-row) ── */
-  h+='<tr class="rwbs" '+(locked?'':drag('W',w.id))+'>';
+  h+='<tr class="rwbs '+wbsCls+'" '+(locked?'':drag('W',w.id))+'>';
   h+='<td class="p1" style="padding-left:'+ind+'px;border-right:2px solid var(--border2)"><div class="ar">';
   if(w.code)h+='<span class="codb">'+w.code+'</span>';
   h+='<div style="display:flex;flex-direction:column">';
@@ -1030,7 +1061,7 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
   h+='</div>';
   if(!locked){h+='<button class="bic" onclick="openModal(\'eW\',\''+w.id+'\')" style="width:19px;height:19px;font-size:9px">e</button><button class="bic del" onclick="delW(\''+w.id+'\')" style="width:19px;height:19px;font-size:9px">x</button>';}
   h+='</div></td>';
-  h+='<td class="p2" style="border-right:1px solid var(--border2)"><span class="cie" style="background:'+cbg+';color:'+cco2+'">'+cname+'</span></td>';
+  h+='<td class="p2" style="border-right:1px solid var(--border2)"></td>';
   h+='<td class="p3" style="border-right:1px solid var(--border2)"></td>';
   h+='<td class="p4" style="border-right:2px solid var(--border2)"></td>';
   h+='<td class="p5 num mut" style="border-right:2px solid var(--border2)">--</td>';
@@ -1065,30 +1096,37 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
       specCtrl='<span class="spsel sk-'+spec+'" style="cursor:default">'+(sl2||'—')+'</span>';
     }
 
-    /* p2: company select */
+    /* p2: company — badge-style pill that wraps a hidden select */
     var rowCoId=isMain?w.companyId:(rowSr?rowSr.companyId:w.companyId)||w.companyId;
-    var rowCo=getCompany(rowCoId); var rowCoName=rowCo?rowCo.name:'?';
-    var rowCoBg=rowCo&&rowCo.bg?rowCo.bg:'var(--bl)'; var rowCoCo=rowCo&&rowCo.co?rowCo.co:'var(--blue)';
+    var rowCo=getCompany(rowCoId);
+    var rowCoName=rowCo?rowCo.name:'—';
+    var rowCoBg=rowCo&&rowCo.bg?rowCo.bg:'var(--bg2)';
+    var rowCoCo=rowCo&&rowCo.co?rowCo.co:'var(--tx3)';
     var coCtrl='';
     if(!locked){
       var coO='<option value="">—</option>';
       for(var ci=0;ci<S.companies.length;ci++) coO+='<option value="'+S.companies[ci].id+'"'+(rowCoId===S.companies[ci].id?' selected':'')+'>'+S.companies[ci].name+'</option>';
-      if(isMain) coCtrl='<select style="font-size:10px;border:none;background:transparent;cursor:pointer;max-width:100px;font-family:var(--font);color:var(--tx);outline:none" onchange="changeRowCo(\''+w.id+'\',null,this)">'+coO+'</select>';
-      else       coCtrl='<select style="font-size:10px;border:none;background:transparent;cursor:pointer;max-width:100px;font-family:var(--font);color:var(--tx);outline:none" onchange="changeRowCo(\''+w.id+'\',\''+rowId+'\',this)">'+coO+'</select>';
+      var chFn=isMain?'changeRowCo(\''+w.id+'\',null,this)':'changeRowCo(\''+w.id+'\',\''+rowId+'\',this)';
+      /* Overlay hidden select on top of visible badge */
+      coCtrl='<div class="co-sel-wrap">';
+      coCtrl+='<span class="co-badge" style="background:'+rowCoBg+';color:'+rowCoCo+'">'+rowCoName+'</span>';
+      coCtrl+='<select onchange="'+chFn+'">'+coO+'</select>';
+      coCtrl+='</div>';
     } else {
       coCtrl='<span class="cie" style="background:'+rowCoBg+';color:'+rowCoCo+'">'+rowCoName+'</span>';
     }
 
-    /* p4: PU editable */
+    /* p4: PU — inline editable (click to type) */
+    var puVal=pu||0;
     var puCtrl='';
     if(!locked){
-      if(isMain) puCtrl='<span class="edt num" style="color:var(--tx2);cursor:pointer" onclick="editRowPU(\''+w.id+'\',null,'+(pu||0)+')">'+( pu?pu.toFixed(2):'0.00')+'</span>';
-      else       puCtrl='<span class="edt num" style="color:var(--tx2);cursor:pointer" onclick="editRowPU(\''+w.id+'\',\''+rowId+'\',' +(pu||0)+')">'+( pu?pu.toFixed(2):'0.00')+'</span>';
+      var puFn=isMain?'inlineEditPU(this,\''+w.id+'\',null)':'inlineEditPU(this,\''+w.id+'\',\''+rowId+'\')';
+      puCtrl='<span class="edt num" style="color:var(--tx2)" onclick="'+puFn+'">'+(puVal?puVal.toFixed(2):'0.00')+'</span>';
     } else {
-      puCtrl='<span class="num mut">'+(pu?pu.toFixed(2):'')+'</span>';
+      puCtrl='<span class="num mut">'+(puVal?puVal.toFixed(2):'')+'</span>';
     }
 
-    h+='<tr class="rsubrow" style="'+rowBg+'">';
+    h+='<tr class="rsubrow '+wbsCls+'" style="'+rowBg+'">';
     /* p1: delete btn for subrows */
     h+='<td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)">';
     if(!isMain&&!locked) h+='<button class="bic del" style="width:16px;height:16px;font-size:8px" onclick="delSubRow(\''+w.id+'\',\''+rowId+'\')">x</button>';
@@ -1129,7 +1167,7 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
 
   /* ── Add specialty line button ── */
   if(!locked){
-    h+='<tr style="background:var(--bg2)">';
+    h+='<tr class="'+wbsCls+'" style="background:var(--bg2)">';
     h+='<td class="p1" colspan="5" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)">';
     h+='<span class="add-subrow-btn" onclick="addSubRow(\''+w.id+'\')">+ Add specialty line</span>';
     h+='</td>';
@@ -1144,7 +1182,7 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
     var ms=bud(w,m); if(w.subRows) for(var sri=0;sri<w.subRows.length;sri++) ms+=subRowBudAtSlot(w.subRows[sri],m);
     sumCols+='<td class="lk num" style="color:var(--blue);font-weight:600">'+(ms?ms.toFixed(1):'')+'</td>';
   }
-  h+='<tr class="rbud"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpb">&#931; Budget HM</span></td>';
+  h+='<tr class="rbud '+wbsCls+'"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpb">&#931; Budget HM</span></td>';
   h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td><td class="p4" style="border-right:2px solid var(--border2)"></td>';
   h+='<td class="p5 num" style="color:var(--blue);font-weight:800;border-right:2px solid var(--border2)">'+(bt?bt.toFixed(1):'0')+'</td>'+sumCols+'</tr>';
 
@@ -1155,7 +1193,7 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
     if(locked) budEurCols+='<td class="lk num" style="color:var(--tx3)">'+(ve?ve.toFixed(0):'')+'</td>';
     else budEurCols+='<td class="edt num" style="color:var(--amber)" data-wid="'+wid2+'" data-key="e'+m+'" data-type="bud-eur" data-m="'+m+'" onclick="openEdtEur(this)">'+(ve?ve.toFixed(0):'')+'</td>';
   }
-  h+='<tr class="rbud"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp" style="background:var(--ambl);color:var(--amber)">Budget EUR</span></td>';
+  h+='<tr class="rbud '+wbsCls+'"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp" style="background:var(--ambl);color:var(--amber)">Budget EUR</span></td>';
   h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td><td class="p4" style="border-right:2px solid var(--border2)"></td>';
   h+='<td class="p5 num" style="color:var(--amber);font-weight:700;border-right:2px solid var(--border2)">'+(btEur?btEur.toFixed(0):'')+'</td>'+budEurCols+'</tr>';
 
@@ -1214,9 +1252,10 @@ function ccHead(page){
 }
 
 function ccBody(page){
-  var h=''; h+=ccGrandTotal(page);
+  var h=''; window._wbsIdx=0; h+=ccGrandTotal(page);
   for(var gi=0;gi<S.groups.length;gi++){
     var g=S.groups[gi]; var allW=getAllW(g);
+    if(gi>0) h+='<tr class="group-sep-row"><td colspan="'+(6+NM)+'"></td></tr>';
     h+=ccGrpRow(g,allW,page);
     if(!g.col){
       var dw=filterW(g.id);
@@ -1297,16 +1336,19 @@ function wbsCCRows(w,lv,page,isLast){
   var c=getCompany(w.companyId); var cname=c?c.name:'?'; var ck=ckey(cname);
   var sl=specLabel(w.spec); var h='';
   var cbg=c&&c.bg?c.bg:'var(--bl)'; var cco=c&&c.co?c.co:'var(--blue)';
+  if(window._wbsIdx===undefined) window._wbsIdx=0;
+  var wbsCls=(window._wbsIdx%2===0)?'wbs-even':'wbs-odd';
+  window._wbsIdx++;
 
   /* WBS header */
-  h+='<tr class="rwbs">';
+  h+='<tr class="rwbs '+wbsCls+'">';
   h+='<td class="p1" style="padding-left:'+ind+'px;border-right:2px solid var(--border2)"><div class="ar">';
   if(w.code)h+='<span class="codb">'+w.code+'</span>';
   h+='<div style="display:flex;flex-direction:column">';
   h+='<span style="font-weight:600;font-size:12px">'+w.name+'</span>';
   var svN=getSupervisorName(w);if(svN)h+='<span class="supervisor-tag">&#128100; <span>'+svN+'</span></span>';
   h+='</div></div></td>';
-  h+='<td class="p2" style="border-right:1px solid var(--border2)"><span class="cie" style="background:'+cbg+';color:'+cco+'">'+cname+'</span></td>';
+  h+='<td class="p2" style="border-right:1px solid var(--border2)"></td>';
   h+='<td class="p3" style="border-right:1px solid var(--border2)">'+(sl?'<span class="spsel sk-'+w.spec+'" style="cursor:default">'+sl+'</span>':'')+'</td>';
   h+='<td class="p4 num" style="color:var(--blue);border-right:2px solid var(--border2)">'+bt.toFixed(1)+'</td>';
   h+='<td class="p5 num" style="color:var(--green);font-weight:700;border-right:2px solid var(--border2)">'+rc2.toFixed(1)+'</td>';
@@ -1314,20 +1356,20 @@ function wbsCCRows(w,lv,page,isLast){
   for(var m=0;m<NM;m++){var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';h+='<td class="'+cls+'"></td>';}
   h+='</tr>';
   /* Ref Budget HM - locked */
-  h+='<tr class="rbud"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpb">Budget HM</span></td>';
+  h+='<tr class="rbud '+wbsCls+'"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpb">Budget HM</span></td>';
   h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td><td class="p4" style="border-right:2px solid var(--border2)"></td>';
   h+='<td class="p5 num" style="color:var(--blue);font-weight:700;border-right:2px solid var(--border2)">'+bt.toFixed(1)+'</td><td style="border-right:2px solid var(--border2)"></td>';
   for(var m=0;m<NM;m++){var v=bud(w,m);var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';h+='<td class="'+cls+' lk num" style="color:var(--tx3)">'+f1(v)+'</td>';}
   h+='</tr>';
   /* Ref Budget EUR - locked */
   var btEur2=addBudgetEurSlots(w);
-  h+='<tr class="rbud"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp" style="background:var(--ambl);color:var(--amber)">Budget EUR</span></td>';
+  h+='<tr class="rbud '+wbsCls+'"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp" style="background:var(--ambl);color:var(--amber)">Budget EUR</span></td>';
   h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td><td class="p4" style="border-right:2px solid var(--border2)"></td>';
   h+='<td class="p5 num" style="color:var(--amber);font-weight:700;border-right:2px solid var(--border2)">'+(btEur2?btEur2.toFixed(0):'')+'</td><td style="border-right:2px solid var(--border2)"></td>';
   for(var m=0;m<NM;m++){var ve=getBudEur(w,m);var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';h+='<td class="'+cls+' lk num" style="color:var(--tx3)">'+(ve?ve.toFixed(0):'')+'</td>';}
   h+='</tr>';
   /* Actual/ETC row - editable */
-  h+='<tr class="rre"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpr" title="Click cells to enter actuals (CC month) or ETC (future months)">✏ Actual/ETC</span></td>';
+  h+='<tr class="rre '+wbsCls+'"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpr" title="Click cells to enter actuals (CC month) or ETC (future months)">✏ Actual/ETC</span></td>';
   h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td><td class="p4" style="border-right:2px solid var(--border2)"></td>';
   h+='<td class="p5 num" style="color:var(--green);font-weight:700;border-right:2px solid var(--border2)">'+rc2.toFixed(1)+'</td><td style="border-right:2px solid var(--border2)"></td>';
   for(var m=0;m<NM;m++){
@@ -1344,7 +1386,7 @@ function wbsCCRows(w,lv,page,isLast){
   }
   h+='</tr>';
   /* Variance */
-  h+='<tr class="rvar"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpv">Variance</span></td>';
+  h+='<tr class="rvar '+wbsCls+'"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpv">Variance</span></td>';
   h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td><td class="p4" style="border-right:2px solid var(--border2)"></td>';
   h+='<td class="num '+pnc(va)+'" style="font-weight:700;border-right:2px solid var(--border2)">'+(va>0?'+':'')+va.toFixed(1)+'</td><td style="border-right:2px solid var(--border2)"></td>';
   for(var m=0;m<NM;m++){var bv=bud(w,m);var rv2=m<=page?reel(w,m):rad(w,m);var va2=+(rv2-bv).toFixed(1);var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';h+='<td class="'+cls+' num '+pnc(va2)+'">'+(va2!==0?(va2>0?'+':'')+va2.toFixed(1):'')+'</td>';}
@@ -1859,16 +1901,35 @@ function editRowPU(wbsId,srId,cur){
   if(isNaN(newPU)||newPU<0) return;
   for(var i=0;i<S.wbs.length;i++){
     if(S.wbs[i].id!==wbsId) continue;
-    if(!srId){
-      S.wbs[i].pu=+newPU.toFixed(2);
-    } else if(S.wbs[i].subRows){
-      for(var j=0;j<S.wbs[i].subRows.length;j++){
-        if(S.wbs[i].subRows[j].id===srId){S.wbs[i].subRows[j].pu=+newPU.toFixed(2);break;}
-      }
-    }
+    if(!srId) S.wbs[i].pu=+newPU.toFixed(2);
+    else if(S.wbs[i].subRows) for(var j=0;j<S.wbs[i].subRows.length;j++) if(S.wbs[i].subRows[j].id===srId){S.wbs[i].subRows[j].pu=+newPU.toFixed(2);break;}
     break;
   }
   saveS(); render();
+}
+
+function inlineEditPU(span,wbsId,srId){
+  if(span.querySelector('input')) return;
+  var cur=parseFloat(span.textContent)||0;
+  var inp=document.createElement('input');
+  inp.type='number'; inp.step='0.01'; inp.min='0'; inp.value=cur;
+  inp.style.cssText='width:58px;font-family:var(--mono);font-size:11px;text-align:right;border:1.5px solid var(--amber);border-radius:4px;padding:1px 4px;outline:none;background:var(--ambl);';
+  span.innerHTML=''; span.appendChild(inp); inp.focus(); inp.select();
+  function save(){
+    var v=parseFloat(inp.value);
+    if(!isNaN(v)&&v>=0){
+      for(var i=0;i<S.wbs.length;i++){
+        if(S.wbs[i].id!==wbsId) continue;
+        if(!srId) S.wbs[i].pu=+v.toFixed(2);
+        else if(S.wbs[i].subRows) for(var j=0;j<S.wbs[i].subRows.length;j++) if(S.wbs[i].subRows[j].id===srId){S.wbs[i].subRows[j].pu=+v.toFixed(2);break;}
+        break;
+      }
+      saveS();
+    }
+    render();
+  }
+  inp.addEventListener('blur',save);
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();save();}if(e.key==='Escape'){render();}});
 }
 
 function changeSpec(wid,sel){
