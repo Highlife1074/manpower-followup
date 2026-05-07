@@ -627,9 +627,9 @@ function addBudgetEurSlots(w){var t=0;for(var i=0;i<NM;i++)t+=getBudEur(w,i);ret
 
 
 /* ---- SubRow helpers (multiple specialty lines per WBS) ---- */
-function makeSubRow(spec,pu){
+function makeSubRow(spec,pu,companyId){
   var d={};
-  return{id:uid(),spec:spec||'',pu:pu||0,data:d};
+  return{id:uid(),spec:spec||'',pu:pu||0,companyId:companyId||'',data:d};
 }
 
 function subRowBudAtSlot(sr,i){
@@ -757,6 +757,7 @@ function migrate(s){
     if(!w.supervisorId)w.supervisorId='';
     if(!w.dataEur)w.dataEur={};
     if(!w.subRows)w.subRows=[];
+    w.subRows.forEach(function(sr){if(sr.companyId===undefined)sr.companyId=w.companyId||'';});
   });
   s.assignments.forEach(function(a){if(a.isForeman===undefined)a.isForeman=false;});
   if(!s.specs||!s.specs.length)s.specs=[
@@ -1037,7 +1038,7 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
   h+='</tr>';
 
   /* ── Helper to render one specialty row (main or subrow) ── */
-  function specRow(rowId, spec, pu, budFn, editFn, isMain, subIdx){
+  function specRow(rowId, spec, pu, budFn, editFn, isMain, rowSr){
     var sl2=specLabel(spec);
     var rowTotal=0; for(var m=0;m<NM;m++) rowTotal+=budFn(m);
     var cols='';
@@ -1064,19 +1065,40 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
       specCtrl='<span class="spsel sk-'+spec+'" style="cursor:default">'+(sl2||'—')+'</span>';
     }
 
-    h+='<tr class="rsubrow" style="'+rowBg+'">';
-    /* p1: indent label + delete btn for subrows */
-    h+='<td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)">';
-    if(!isMain){
-      if(!locked) h+='<button class="bic del" style="width:16px;height:16px;font-size:8px" onclick="delSubRow(\''+w.id+'\',\''+rowId+'\')">x</button>';
+    /* p2: company select */
+    var rowCoId=isMain?w.companyId:(rowSr?rowSr.companyId:w.companyId)||w.companyId;
+    var rowCo=getCompany(rowCoId); var rowCoName=rowCo?rowCo.name:'?';
+    var rowCoBg=rowCo&&rowCo.bg?rowCo.bg:'var(--bl)'; var rowCoCo=rowCo&&rowCo.co?rowCo.co:'var(--blue)';
+    var coCtrl='';
+    if(!locked){
+      var coO='<option value="">—</option>';
+      for(var ci=0;ci<S.companies.length;ci++) coO+='<option value="'+S.companies[ci].id+'"'+(rowCoId===S.companies[ci].id?' selected':'')+'>'+S.companies[ci].name+'</option>';
+      if(isMain) coCtrl='<select style="font-size:10px;border:none;background:transparent;cursor:pointer;max-width:100px;font-family:var(--font);color:var(--tx);outline:none" onchange="changeRowCo(\''+w.id+'\',null,this)">'+coO+'</select>';
+      else       coCtrl='<select style="font-size:10px;border:none;background:transparent;cursor:pointer;max-width:100px;font-family:var(--font);color:var(--tx);outline:none" onchange="changeRowCo(\''+w.id+'\',\''+rowId+'\',this)">'+coO+'</select>';
+    } else {
+      coCtrl='<span class="cie" style="background:'+rowCoBg+';color:'+rowCoCo+'">'+rowCoName+'</span>';
     }
+
+    /* p4: PU editable */
+    var puCtrl='';
+    if(!locked){
+      if(isMain) puCtrl='<span class="edt num" style="color:var(--tx2);cursor:pointer" onclick="editRowPU(\''+w.id+'\',null,'+(pu||0)+')">'+( pu?pu.toFixed(2):'0.00')+'</span>';
+      else       puCtrl='<span class="edt num" style="color:var(--tx2);cursor:pointer" onclick="editRowPU(\''+w.id+'\',\''+rowId+'\',' +(pu||0)+')">'+( pu?pu.toFixed(2):'0.00')+'</span>';
+    } else {
+      puCtrl='<span class="num mut">'+(pu?pu.toFixed(2):'')+'</span>';
+    }
+
+    h+='<tr class="rsubrow" style="'+rowBg+'">';
+    /* p1: delete btn for subrows */
+    h+='<td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)">';
+    if(!isMain&&!locked) h+='<button class="bic del" style="width:16px;height:16px;font-size:8px" onclick="delSubRow(\''+w.id+'\',\''+rowId+'\')">x</button>';
     h+='</td>';
-    /* p2: company (empty — same as WBS header) */
-    h+='<td class="p2" style="border-right:1px solid var(--border2)"></td>';
-    /* p3: SPECIALTY — select or badge */
+    /* p2: company */
+    h+='<td class="p2" style="border-right:1px solid var(--border2);padding:2px 6px">'+coCtrl+'</td>';
+    /* p3: specialty */
     h+='<td class="p3" style="border-right:1px solid var(--border2);padding:2px 6px">'+specCtrl+'</td>';
     /* p4: PU */
-    h+='<td class="p4 num mut" style="border-right:2px solid var(--border2)">'+(pu?pu.toFixed(2):'')+'</td>';
+    h+='<td class="p4" style="border-right:2px solid var(--border2);padding:0 6px;text-align:right">'+puCtrl+'</td>';
     /* p5: row total */
     h+='<td class="p5 num" style="color:var(--blue);font-weight:600;border-right:2px solid var(--border2)">'+(rowTotal?rowTotal.toFixed(1):'')+'</td>';
     h+=cols+'</tr>';
@@ -1087,7 +1109,7 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
     specRow(w.id, w.spec, w.pu,
       function(m){return bud(w,m);},
       function(m){return 'data-wid="'+w.id+'" data-key="b'+m+'" data-type="bud" data-m="'+m+'" onclick="ecBud(this,\''+w.id+'\','+m+','+bud(w,m)+')"';},
-      true
+      true, null
     );
   }
 
@@ -1099,7 +1121,7 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
         specRow(sr2.id, sr2.spec, sr2.pu,
           function(m){return subRowBudAtSlot(sr2,m);},
           function(m){return 'data-wid="'+w.id+'" data-srid="'+sr2.id+'" data-key="sr'+m+'" data-type="bud-sub" data-m="'+m+'" onclick="ecSubRow(this)"';},
-          false
+          false, sr2
         );
       })(sr);
     }
@@ -1807,6 +1829,48 @@ function dop(e,tt,tid){
 /* ============================================================
    SPECIALTY CHANGE
    ============================================================ */
+
+function changeRowCo(wbsId,srId,sel){
+  var coId=sel.value;
+  for(var i=0;i<S.wbs.length;i++){
+    if(S.wbs[i].id!==wbsId) continue;
+    if(!srId){
+      S.wbs[i].companyId=coId;
+      /* auto-update PU */
+      var pu=getPU(coId,S.wbs[i].spec);
+      if(pu>0)S.wbs[i].pu=pu;
+    } else if(S.wbs[i].subRows){
+      for(var j=0;j<S.wbs[i].subRows.length;j++){
+        if(S.wbs[i].subRows[j].id===srId){
+          S.wbs[i].subRows[j].companyId=coId;
+          var pu2=getPU(coId,S.wbs[i].subRows[j].spec);
+          if(pu2>0)S.wbs[i].subRows[j].pu=pu2;
+          break;
+        }
+      }
+    }
+    break;
+  }
+  saveS(); render();
+}
+
+function editRowPU(wbsId,srId,cur){
+  var newPU=parseFloat(prompt('Unit Rate (EUR/MM):',cur));
+  if(isNaN(newPU)||newPU<0) return;
+  for(var i=0;i<S.wbs.length;i++){
+    if(S.wbs[i].id!==wbsId) continue;
+    if(!srId){
+      S.wbs[i].pu=+newPU.toFixed(2);
+    } else if(S.wbs[i].subRows){
+      for(var j=0;j<S.wbs[i].subRows.length;j++){
+        if(S.wbs[i].subRows[j].id===srId){S.wbs[i].subRows[j].pu=+newPU.toFixed(2);break;}
+      }
+    }
+    break;
+  }
+  saveS(); render();
+}
+
 function changeSpec(wid,sel){
   var spec=sel.value;
   for(var i=0;i<S.wbs.length;i++){
@@ -3592,10 +3656,12 @@ function addSubRow(wbsId){
   var w=null;for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wbsId){w=S.wbs[i];break;}
   if(!w) return;
   if(!w.subRows) w.subRows=[];
-  /* Open a small modal to pick spec+pu */
   var box=document.getElementById('mbox');
-  var spO='';for(var i=0;i<SPECS.length-1;i++) spO+='<option value="'+SPECS[i].key+'">'+SPECS[i].label+'</option>';
+  var spO='';for(var i=0;i<SPECS.length;i++) if(SPECS[i].key) spO+='<option value="'+SPECS[i].key+'">'+SPECS[i].label+'</option>';
+  var coO='<option value="">— Same as WBS —</option>';
+  for(var i=0;i<S.companies.length;i++) coO+='<option value="'+S.companies[i].id+'"'+(w.companyId===S.companies[i].id?' selected':'')+'>'+S.companies[i].name+'</option>';
   var h='<h3>Add Specialty Line</h3>';
+  h+='<label>Company</label><select id="srCo">'+coO+'</select>';
   h+='<label>Specialty</label><select id="srSpec" onchange="autoFillSRPU(\''+wbsId+'\')">'+spO+'</select>';
   h+='<label>Unit Rate (EUR/MM)</label><input id="srPU" type="number" step="0.01" value="0">';
   h+='<div class="ma"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="confirmAddSubRow(\''+wbsId+'\')">Add</button></div>';
@@ -3614,10 +3680,12 @@ function autoFillSRPU(wbsId){
 function confirmAddSubRow(wbsId){
   var spec=document.getElementById('srSpec').value;
   var pu=parseFloat(document.getElementById('srPU').value)||0;
+  var coId=document.getElementById('srCo').value;
   var w=null;for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wbsId){w=S.wbs[i];break;}
   if(!w) return;
   if(!w.subRows) w.subRows=[];
-  w.subRows.push(makeSubRow(spec,pu));
+  var effectiveCo=coId||w.companyId||'';
+  w.subRows.push(makeSubRow(spec,pu,effectiveCo));
   closeModal(); render();
 }
 
