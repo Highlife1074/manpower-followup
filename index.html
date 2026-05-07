@@ -1037,7 +1037,7 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
   h+='</tr>';
 
   /* ── Helper to render one specialty row (main or subrow) ── */
-  function specRow(rowId, spec, pu, budFn, editFn, isMain){
+  function specRow(rowId, spec, pu, budFn, editFn, isMain, subIdx){
     var sl2=specLabel(spec);
     var rowTotal=0; for(var m=0;m<NM;m++) rowTotal+=budFn(m);
     var cols='';
@@ -1047,29 +1047,37 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
       else cols+='<td class="edt num" style="color:var(--blue)" '+editFn(m)+'>'+( v?v.toFixed(1):'')+'</td>';
     }
     var rowBg=isMain?'background:var(--white)':'background:#f5f7fb';
+
+    /* Build specialty control — select (unlocked) or badge (locked) — goes in p3 */
+    var specCtrl='';
+    if(!locked){
+      var spO='';
+      for(var i=0;i<SPECS.length;i++) spO+='<option value="'+SPECS[i].key+'"'+(spec===SPECS[i].key?' selected':'')+'>'+SPECS[i].label+'</option>';
+      if(isMain){
+        /* Main row: changeSpec updates the WBS itself */
+        specCtrl='<select class="spsel sk-'+spec+'" onchange="changeSpec(\''+w.id+'\',this)">'+spO+'</select>';
+      } else {
+        /* SubRow: changeSubSpec updates the subRow */
+        specCtrl='<select class="spsel sk-'+spec+'" onchange="changeSubSpec(\''+w.id+'\',\''+rowId+'\',this)">'+spO+'</select>';
+      }
+    } else {
+      specCtrl='<span class="spsel sk-'+spec+'" style="cursor:default">'+(sl2||'—')+'</span>';
+    }
+
     h+='<tr class="rsubrow" style="'+rowBg+'">';
+    /* p1: indent label + delete btn for subrows */
     h+='<td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)">';
     if(!isMain){
-      h+='<span class="tp" style="background:var(--pl);color:var(--pur);margin-right:4px">'+(sl2||'?')+'</span>';
       if(!locked) h+='<button class="bic del" style="width:16px;height:16px;font-size:8px" onclick="delSubRow(\''+w.id+'\',\''+rowId+'\')">x</button>';
-    } else {
-      /* Main specialty row — show select if unlocked */
-      if(!locked){
-        var spO='';for(var i=0;i<SPECS.length;i++) spO+='<option value="'+SPECS[i].key+'"'+(spec===SPECS[i].key?' selected':'')+'>'+SPECS[i].label+'</option>';
-        h+='<select class="spsel sk-'+spec+'" style="font-size:10px" onchange="changeSpec(\''+w.id+'\',this)">'+spO+'</select>';
-      } else {
-        h+='<span class="spsel sk-'+spec+'" style="cursor:default;font-size:10px">'+(sl2||'—')+'</span>';
-      }
     }
     h+='</td>';
-    /* Specialty badge col */
-    if(isMain){
-      h+='<td class="p2" style="border-right:1px solid var(--border2)"></td>';
-    } else {
-      h+='<td class="p2" style="border-right:1px solid var(--border2)"><span class="spsel sk-'+spec+'" style="cursor:default;font-size:10px">'+(sl2||'—')+'</span></td>';
-    }
-    h+='<td class="p3" style="border-right:1px solid var(--border2)"></td>';
+    /* p2: company (empty — same as WBS header) */
+    h+='<td class="p2" style="border-right:1px solid var(--border2)"></td>';
+    /* p3: SPECIALTY — select or badge */
+    h+='<td class="p3" style="border-right:1px solid var(--border2);padding:2px 6px">'+specCtrl+'</td>';
+    /* p4: PU */
     h+='<td class="p4 num mut" style="border-right:2px solid var(--border2)">'+(pu?pu.toFixed(2):'')+'</td>';
+    /* p5: row total */
     h+='<td class="p5 num" style="color:var(--blue);font-weight:600;border-right:2px solid var(--border2)">'+(rowTotal?rowTotal.toFixed(1):'')+'</td>';
     h+=cols+'</tr>';
   }
@@ -1804,13 +1812,30 @@ function changeSpec(wid,sel){
   for(var i=0;i<S.wbs.length;i++){
     if(S.wbs[i].id===wid){
       S.wbs[i].spec=spec;
-      /* auto-update PU from company tarif */
       var pu=getPU(S.wbs[i].companyId,spec);
       if(pu>0)S.wbs[i].pu=pu;
       break;
     }
   }
-  sel.className='spsel sk-'+spec; saveS();
+  sel.className='spsel sk-'+spec; saveS(); render();
+}
+
+function changeSubSpec(wbsId,srId,sel){
+  var spec=sel.value;
+  for(var i=0;i<S.wbs.length;i++){
+    if(S.wbs[i].id===wbsId&&S.wbs[i].subRows){
+      for(var j=0;j<S.wbs[i].subRows.length;j++){
+        if(S.wbs[i].subRows[j].id===srId){
+          S.wbs[i].subRows[j].spec=spec;
+          var pu=getPU(S.wbs[i].companyId,spec);
+          if(pu>0)S.wbs[i].subRows[j].pu=pu;
+          break;
+        }
+      }
+      break;
+    }
+  }
+  sel.className='spsel sk-'+spec; saveS(); render();
 }
 
 /* ============================================================
