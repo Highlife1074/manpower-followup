@@ -140,7 +140,7 @@ td{padding:0 7px;vertical-align:middle;white-space:nowrap;border-right:1px solid
 
 /* === ROW STYLES === */
 /* Grand total */
-.rg  td{height:30px;background:#3d5a80;border-bottom:1px solid #2e4460;border-right:1px solid #2e4460;}
+.rg  td{height:30px;background:#3d5a80;border-bottom:1px solid #2e4460;border-right:1px solid #2e4460;color:#fde68a;}
 .rg2 td{height:30px;background:#3a7d54;border-bottom:1px solid #2a5d3e;border-right:1px solid #2a5d3e;}
 .rg3 td{height:30px;background:#f8f4ef;border-bottom:3px solid var(--border2);border-right:1px solid var(--border2);}
 
@@ -149,7 +149,7 @@ td{padding:0 7px;vertical-align:middle;white-space:nowrap;border-right:1px solid
 .rgroup-first td{border-top:2px solid var(--border2)!important;}
 
 /* Subgroup */
-.rsg td{height:28px;background:#eae5dc;border-bottom:1px solid var(--border2);border-right:1px solid var(--border);}
+.rsg td{height:31px;background:#e2ddd4;border-bottom:1px solid var(--border3);border-right:1px solid var(--border2);}
 
 /* WBS header */
 .rwbs td{height:26px;background:var(--white);border-top:2px solid var(--border2);border-bottom:1px solid var(--border);border-right:1px solid var(--border);}
@@ -411,6 +411,11 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .group-sep-row td{border-top:4px solid #8a8070!important;background:var(--bg)!important;height:4px!important;}
 .wbs-sep-row td{border-top:2px solid #b8b0a4!important;background:var(--bg2)!important;height:3px!important;}
 .sg-sep-row td{border-top:3px solid #a09890!important;background:var(--bg)!important;height:3px!important;}
+
+/* Contract tracking rows in CC */
+.cc-reel-eur-row td{background:#fff8f0!important;}
+.cc-rad-hm-row td{background:#fffbf0!important;}
+.cc-contract-recap td{background:#f8f4ee!important;font-size:10px;}
 </style>
 </head>
 <body>
@@ -626,8 +631,11 @@ function setBudSlot(w,i,v){
 function ccSlot(i){
   var k=mkey(i);
   if(!S.ccByKey) S.ccByKey={};
-  if(!S.ccByKey[k]) S.ccByKey[k]={reel:{},rad:{},inv:{hrs:0,hm:0,amt:0,note:''}};
-  return S.ccByKey[k];
+  if(!S.ccByKey[k]) S.ccByKey[k]={reel:{},rad:{},inv:{hrs:0,hm:0,amt:0,note:''},reelEur:{},radHM:{}};
+  var sl=S.ccByKey[k];
+  if(!sl.reelEur)sl.reelEur={};
+  if(!sl.radHM)sl.radHM={};
+  return sl;
 }
 function reelAtSlot(w,i){
   if(S.ccM<0||i>S.ccM) return 0;
@@ -724,7 +732,7 @@ function pnc(v){return v>0?'neg':v<0?'pos':'zer';}
    ============================================================ */
 function makeWBS(id,name,code,parentId,companyId,spec,pu){
   var d={}; /* slot keys set via setBudSlot - legacy b0..b11 still readable */
-  return{id:id,name:name,code:code||'',parentId:parentId,companyId:companyId||'',spec:spec||'',pu:pu||0,supervisorId:'',eurOnly:false,data:d,dataEur:{},subRows:[]};
+  return{id:id,name:name,code:code||'',parentId:parentId,companyId:companyId||'',spec:spec||'',pu:pu||0,supervisorId:'',eurOnly:false,data:d,dataEur:{},subRows:[],contractRef:'',contractAmt:0};
 }
 
 function buildDefault(){
@@ -784,6 +792,8 @@ function migrate(s){
     if(!w.dataEur)w.dataEur={};
     if(!w.subRows)w.subRows=[];
     w.subRows.forEach(function(sr){if(sr.companyId===undefined)sr.companyId=w.companyId||'';});
+    if(w.contractRef===undefined)w.contractRef='';
+    if(w.contractAmt===undefined)w.contractAmt=0;
   });
   s.assignments.forEach(function(a){if(a.isForeman===undefined)a.isForeman=false;});
   if(!s.specs||!s.specs.length)s.specs=[
@@ -991,7 +1001,7 @@ function budBody(locked){
   h+='<tr class="rg"><td class="p1" style="padding-left:10px;border-right:2px solid #2e4460;background:#3d5a80"><span style="color:#fff;font-size:12px;font-weight:800">PROJECT TOTAL</span></td>';
   h+='<td class="p2" style="border-right:1px solid #2e4460;background:#3d5a80"></td><td class="p3" style="border-right:1px solid #2e4460;background:#3d5a80"></td>';
   h+='<td class="p4" style="border-right:2px solid #2e4460;background:#3d5a80"></td>';
-  h+='<td class="p5 num" style="color:#fff;font-weight:800;font-size:13px;border-right:2px solid #2e4460;background:#3d5a80">'+gt.toFixed(1)+'</td>'+cols+'</tr>';
+  h+='<td class="p5 num" style="color:#fde68a;font-weight:800;font-size:13px;border-right:2px solid #2e4460;background:#3d5a80">'+gt.toFixed(1)+'</td>'+cols+'</tr>';
   h+='<tr class="sep"><td colspan="'+(5+NM)+'"></td></tr>';
 
   for(var gi=0;gi<S.groups.length;gi++){
@@ -1034,7 +1044,7 @@ function sgRow(sg,sgW,locked){
   var h='<tr class="rsg" '+(locked?'':drag('SG',sg.id))+'>';
   h+='<td class="p1" style="padding-left:24px;border-right:2px solid var(--border2)"><div class="ar">';
   h+='<span class="tog" onclick="tog(\'SG\',\''+sg.id+'\')">'+(sg.col?'▶':'▼')+'</span>';
-  h+='<span style="font-size:11px;font-weight:700;font-style:italic;color:var(--pur)">◆ '+sg.name+'</span>';
+  h+='<span style="font-size:13px;font-weight:800;color:#4a3a80;letter-spacing:.01em">◆ '+sg.name+'</span>';
   if(!locked){h+='<button class="bic" onclick="openModal(\'eSG\',\''+sg.id+'\')" style="width:19px;height:19px">e</button><button class="bic del" onclick="delSG(\''+sg.id+'\')" style="width:19px;height:19px">x</button>';}
   h+='</div></td>';
   h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td>';
@@ -1286,8 +1296,8 @@ function ccGrandTotal(page){
   h+='<tr class="rg"><td class="p1" style="padding-left:10px;border-right:2px solid #2e4460;background:#3d5a80"><span style="color:#fff;font-size:12px;font-weight:800">PROJECT TOTAL</span></td>';
   h+='<td class="p2" style="border-right:1px solid #2e4460;background:#3d5a80"><span class="tp tpb">Budget</span></td>';
   h+='<td class="p3" style="border-right:1px solid #2e4460;background:#3d5a80"></td>';
-  h+='<td class="p4" style="border-right:2px solid #2e4460;background:#3d5a80"><span class="num" style="color:#fff;font-weight:800">'+tB.toFixed(1)+'</span></td>';
-  h+='<td class="num" style="color:#fff;font-weight:800;border-right:2px solid #2e4460">--</td>';
+  h+='<td class="p4" style="border-right:2px solid #2e4460;background:#3d5a80"><span class="num" style="color:#fde68a;font-weight:800">'+tB.toFixed(1)+'</span></td>';
+  h+='<td class="num" style="color:#fde68a;font-weight:800;border-right:2px solid #2e4460">--</td>';
   h+='<td style="border-right:2px solid #2e4460;background:#3d5a80"></td>';
   for(var m=0;m<NM;m++){var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';h+='<td class="'+cls+' num" style="color:#fff;font-weight:700;background:#3d5a80">'+f1(mB[m])+'</td>';}
   h+='</tr>';
@@ -1295,7 +1305,7 @@ function ccGrandTotal(page){
   h+='<tr class="rg2"><td class="p1" style="padding-left:10px;border-right:2px solid #2a5d3e;background:#3a7d54"></td>';
   h+='<td class="p2" style="border-right:1px solid #2a5d3e;background:#3a7d54"><span class="tp tpr">Actual/ETC</span></td>';
   h+='<td class="p3" style="border-right:1px solid #2a5d3e;background:#3a7d54"></td><td class="p4" style="border-right:2px solid #2a5d3e;background:#3a7d54"></td>';
-  h+='<td class="p5 num" style="color:#fff;font-weight:800;border-right:2px solid #2a5d3e;background:#3a7d54">'+tR.toFixed(1)+'</td><td style="border-right:2px solid #2a5d3e;background:#3a7d54"></td>';
+  h+='<td class="p5 num" style="color:#fde68a;font-weight:800;border-right:2px solid #2a5d3e;background:#3a7d54">'+tR.toFixed(1)+'</td><td style="border-right:2px solid #2a5d3e;background:#3a7d54"></td>';
   for(var m=0;m<NM;m++){var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';h+='<td class="'+cls+' num" style="color:#fff;font-weight:700;background:#3a7d54">'+f1(mR[m])+'</td>';}
   h+='</tr>';
   /* Variance */
@@ -1329,7 +1339,7 @@ function ccSgRow(sg,sgW,page){
   var va=+(tRC-tB).toFixed(1);
   var h='<tr class="rsg" onclick="tog(\'SG\',\''+sg.id+'\')" style="cursor:pointer">';
   h+='<td class="p1" style="padding-left:24px;border-right:2px solid var(--border2)"><div class="ar">';
-  h+='<span class="tog">'+(sg.col?'>':'v')+'</span><span style="font-size:11px;font-weight:700;color:var(--blue)">-- '+sg.name+'</span></div></td>';
+  h+='<span class="tog">'+(sg.col?'▶':'▼')+'</span><span style="font-size:13px;font-weight:800;color:#4a3a80;letter-spacing:.01em">◆ '+sg.name+'</span></div></td>';
   h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td>';
   h+='<td class="p4 num" style="color:var(--blue);border-right:2px solid var(--border2)">'+tB.toFixed(1)+'</td>';
   h+='<td class="num" style="color:var(--green);border-right:2px solid var(--border2)">'+tRC.toFixed(1)+'</td>';
@@ -1399,6 +1409,71 @@ function wbsCCRows(w,lv,page,isLast){
   h+='<td class="num '+pnc(va)+'" style="font-weight:700;border-right:2px solid var(--border2)">'+(va>0?'+':'')+va.toFixed(1)+'</td><td style="border-right:2px solid var(--border2)"></td>';
   for(var m=0;m<NM;m++){var bv=bud(w,m);var rv2=m<=page?reel(w,m):rad(w,m);var va2=+(rv2-bv).toFixed(1);var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';h+='<td class="'+cls+' num '+pnc(va2)+'">'+(va2!==0?(va2>0?'+':'')+va2.toFixed(1):'')+'</td>';}
   h+='</tr>';
+
+  /* ── Consommé EUR row (editable) ── */
+  var cumEur=reelEurCum(w,page);
+  h+='<tr class="rbud '+wbsCls+'"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)">';
+  h+='<span class="tp" style="background:#fff3e6;color:#b06010">&#128176; Consommé EUR</span></td>';
+  h+='<td class="p2" style="border-right:1px solid var(--border2)"></td>';
+  h+='<td class="p3" style="border-right:1px solid var(--border2)"></td>';
+  h+='<td class="p4" style="border-right:2px solid var(--border2)"></td>';
+  h+='<td class="p5 num" style="color:#b06010;font-weight:700;border-right:2px solid var(--border2)">'+(cumEur?cumEur.toFixed(0):'')+'</td>';
+  h+='<td style="border-right:2px solid var(--border2)"></td>';
+  for(var m=0;m<NM;m++){
+    var vEur=getReelEur(w,m);
+    var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';
+    var wid=w.id;
+    if(m<=S.ccM){
+      h+='<td class="'+cls+' edt num" style="color:#b06010" data-wid="'+wid+'" data-type="cc-reel-eur" data-m="'+m+'" onclick="ecCC(this,\''+wid+'\','+m+',\'cc-reel-eur\','+vEur+')">'+(vEur?vEur.toFixed(0):'')+'</td>';
+    } else {
+      h+='<td class="'+cls+' lk num" style="color:var(--tx3)"></td>';
+    }
+  }
+  h+='</tr>';
+
+  /* ── RAD HM manuel row (amber, comparison) ── */
+  h+='<tr class="rbud '+wbsCls+'"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)">';
+  h+='<span class="tp" style="background:var(--ambl);color:var(--amber)">&#9998; RAD HM manuel</span></td>';
+  h+='<td class="p2" style="border-right:1px solid var(--border2)"></td>';
+  h+='<td class="p3" style="border-right:1px solid var(--border2)"></td>';
+  h+='<td class="p4" style="border-right:2px solid var(--border2)"></td>';
+  var radHMManTot=0;for(var m2=page+1;m2<NM;m2++){var rv3=getRadHM(w,m2);if(rv3!==null)radHMManTot+=rv3;else radHMManTot+=radAtSlot(w,m2);}
+  h+='<td class="p5 num" style="color:var(--amber);font-weight:700;border-right:2px solid var(--border2)">'+(radHMManTot?radHMManTot.toFixed(1):'')+'</td>';
+  h+='<td style="border-right:2px solid var(--border2)"></td>';
+  for(var m=0;m<NM;m++){
+    var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';
+    var wid=w.id;
+    var manV=getRadHM(w,m); /* null = not set */
+    var calcV=radAtSlot(w,m);
+    if(m<=S.ccM){
+      /* Past: show nothing */
+      h+='<td class="'+cls+' lk"></td>';
+    } else {
+      /* Future: show manual if set (amber bold), else calc (grey dashed) */
+      var dispV=manV!==null?manV:calcV;
+      var style=manV!==null?'color:var(--amber);font-weight:700':'color:var(--tx3);font-style:italic';
+      h+='<td class="'+cls+' edt num" style="'+style+'" data-wid="'+wid+'" data-type="cc-rad-hm" data-m="'+m+'" onclick="ecCC(this,\''+wid+'\','+m+',\'cc-rad-hm\',' +(dispV||0)+')">'+( dispV?dispV.toFixed(1):'')+'</td>';
+    }
+  }
+  h+='</tr>';
+
+  /* ── Contract mini-recap on WBS (only if contractAmt set) ── */
+  var cs=contractStats(w,page);
+  if(cs){
+    var resteStr=cs.reste<0?'<span style="color:var(--red)">Dépassé '+Math.abs(cs.reste).toLocaleString()+' €</span>':'<strong>'+cs.reste.toLocaleString()+' €</strong>';
+    var dureeStr=cs.duree!==null?('<strong>'+cs.duree+'</strong> mois'):'—';
+    h+='<tr class="'+wbsCls+'"><td class="p1" colspan="6" style="padding:4px 6px 4px '+(ind+12)+'px;border-right:2px solid var(--border2);background:#f8f4ee">';
+    h+='<span style="font-size:10px;color:var(--tx3)">';
+    h+='Contrat: <strong>'+(w.contractRef?w.contractRef+' — ':'')+(w.contractAmt||0).toLocaleString()+' €</strong>';
+    h+=' &nbsp;·&nbsp; Consommé: <strong>'+cs.cum.toLocaleString()+' €</strong>';
+    h+=' &nbsp;·&nbsp; Reste: '+resteStr;
+    h+=' &nbsp;·&nbsp; Moy.: <strong>'+cs.moy.toLocaleString()+' €/mois</strong>';
+    h+=' &nbsp;·&nbsp; Durée estimée: '+dureeStr;
+    h+='</span></td>';
+    for(var m=0;m<NM;m++) h+='<td style="background:#f8f4ee"></td>';
+    h+='</tr>';
+  }
+
   if(isLast)h+='<tr style="height:3px"><td colspan="'+(6+NM)+'" style="background:var(--bg);border-top:var(--group-sep)"></td></tr>';
   return h;
 }
@@ -1680,6 +1755,30 @@ function renderBotRecap(page){
 /* Collect all editable cells in current table */
 function getEdtCells(){return Array.prototype.slice.call(document.querySelectorAll('td.edt'));}
 
+
+/* ---- Contract / EUR tracking helpers ---- */
+function getReelEur(w,i){var v=ccSlot(i).reelEur[w.id];return v!==undefined?+v:0;}
+function setReelEur(w,i,v){ccSlot(i).reelEur[w.id]=v;}
+function getRadHM(w,i){var v=ccSlot(i).radHM[w.id];return v!==undefined?+v:null;} /* null = not set, use calc */
+function setRadHM(w,i,v){ccSlot(i).radHM[w.id]=v;}
+function clearRadHM(w,i){delete ccSlot(i).radHM[w.id];}
+
+function reelEurCum(w,page){
+  var s=0;
+  for(var i=0;i<=Math.min(page,S.ccM);i++) s+=getReelEur(w,i);
+  return+s.toFixed(0);
+}
+function contractStats(w,page){
+  var amt=w.contractAmt||0;
+  if(!amt) return null;
+  var nbMonths=Math.min(page,S.ccM)+1; /* months elapsed incl. CC month */
+  var cum=reelEurCum(w,page);
+  var reste=+(amt-cum).toFixed(0);
+  var moy=nbMonths>0?+(cum/nbMonths).toFixed(0):0;
+  var duree=moy>0?+(reste/moy).toFixed(1):null;
+  return{amt:amt,cum:cum,reste:reste,moy:moy,duree:duree,nbMonths:nbMonths};
+}
+
 /* ---- clipboard for copy-paste between cells ---- */
 var CELL_CLIPBOARD=null;
 
@@ -1701,6 +1800,10 @@ function readCellVal(td){
     return reelAtSlot({id:wid},mi);
   } else if(type==='cc-rad'){
     return radAtSlot({id:wid},mi);
+  } else if(type==='cc-reel-eur'){
+    for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wid) return getReelEur(S.wbs[i],mi);
+  } else if(type==='cc-rad-hm'){
+    for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wid){var rv=getRadHM(S.wbs[i],mi);return rv!==null?rv:radAtSlot(S.wbs[i],mi);}
   }
   return 0;
 }
@@ -1723,6 +1826,10 @@ function writeCellVal(td,v){
     ccSlot(mi).reel[wid]=v;
   } else if(type==='cc-rad'){
     ccSlot(mi).rad[wid]=v;
+  } else if(type==='cc-reel-eur'){
+    for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wid){setReelEur(S.wbs[i],mi,v);break;}
+  } else if(type==='cc-rad-hm'){
+    for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wid){setRadHM(S.wbs[i],mi,v);break;}
   }
 }
 
@@ -2018,6 +2125,10 @@ function openModal(type,id){
     }
     h+='<label>Supervisor</label><select id="msvid">'+svOpts+'</select>';
     h+='</div>'; /* close wbs-hm-fields */
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">';
+    h+='<div><label>N° Contrat</label><input id="mcontractRef" placeholder="ex: CTR-2025-001" value="'+(w.contractRef||'')+'"></div>';
+    h+='<div><label>Montant contrat (EUR)</label><input id="mcontractAmt" type="number" step="1" min="0" placeholder="0" value="'+(w.contractAmt||0)+'"></div>';
+    h+='</div>';
     h+='<div class="ma"><button class="btn danger" onclick="delW(\''+id+'\');closeModal()">Delete</button><button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveW(\''+id+'\')">Save</button></div>';
   } else if(type==='eG'){
     var g=null;for(var i=0;i<S.groups.length;i++){if(S.groups[i].id===id){g=S.groups[i];break;}}
