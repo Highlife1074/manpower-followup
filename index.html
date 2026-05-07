@@ -97,7 +97,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--font);font-size:13px
 .cl-dot{width:9px;height:9px;border-radius:3px;flex-shrink:0;}
 
 /* TABLE */
-.tw{overflow:auto;flex:1;padding:0 16px 16px;position:relative;}
+.tw{overflow:auto;flex:1;padding:0 16px 16px;position:relative;min-height:200px;}
 table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;margin-top:8px;}
 .p1{position:sticky;left:0;z-index:12;background:inherit;}
 .p2{position:sticky;left:260px;z-index:12;background:inherit;}
@@ -2819,9 +2819,11 @@ function renderWorkersPage(){
     html+='</tr>';
   }
   html+='</tbody></table></div>';
+  document.getElementById('pageContent').innerHTML=html;
+}
 
-  /* Bottom totals */
-  html+='<div class="bot-recap">';
+function renderCoverageSummary(){
+  var html='<div class="bot-recap" style="flex:1;overflow-y:auto">';
   html+='<div class="bot-title">Coverage Summary</div>';
   html+='<table class="bot-table" style="width:100%">';
   html+='<thead><tr><th>Category</th><th>Total Need (workers)</th><th>Assigned</th><th>Gap</th>';
@@ -3038,10 +3040,27 @@ function renderAssignmentsPage(){
     rcCard('&#9888;','var(--ol)','Partial','color:var(--ora)',partial,'Workers < Budget')+
     rcCard('&#128308;','var(--rl)','Uncovered','color:var(--red)',uncovered,'No worker assigned');
 
-  var html='<div class="as-grid"><table class="as-table"><thead><tr>';
+  /* Sub-tab: Assign or Overview */
+  if(!window._asTab) window._asTab='assign';
+  var html='<div style="display:flex;gap:6px;padding:8px 16px 0;border-bottom:1px solid var(--border2);background:var(--bg2);flex-shrink:0">';
+  html+='<button class="btn'+(window._asTab==='assign'?' pri':'')+' " onclick="setAsTab(\'assign\')">&#128203; Assignments</button>';
+  html+='<button class="btn'+(window._asTab==='overview'?' pri':'')+' " onclick="setAsTab(\'overview\')">&#128200; Coverage Overview</button>';
+  html+='</div>';
+
+  if(window._asTab==='overview'){
+    /* Coverage summary table in its own space */
+    document.getElementById('pageContent').innerHTML=html+renderCoverageSummary();
+    return;
+  }
+
+  /* Assignment grid */
+  html+='<div class="as-grid"><table class="as-table"><thead><tr>';
   html+='<th class="ap1">WBS</th>';
   html+='<th class="ap2">Budget</th>';
-  for(var m=0;m<NM;m++) html+='<th style="min-width:82px;text-align:center">'+MS[m]+'</th>';
+  for(var m=0;m<NM;m++){
+    var ml=ML[m]?ML[m].short:MS[m];
+    html+='<th style="min-width:120px;text-align:center">'+ml+'</th>';
+  }
   html+='</tr></thead><tbody>';
 
   for(var gi=0;gi<S.groups.length;gi++){
@@ -3095,9 +3114,11 @@ function renderAssignmentsPage(){
     }
   }
   html+='</tbody></table></div>';
+  document.getElementById('pageContent').innerHTML=html;
+}
 
-  /* Bottom totals */
-  html+='<div class="bot-recap">';
+function renderCoverageSummary(){
+  var html='<div class="bot-recap" style="flex:1;overflow-y:auto">';
   html+='<div class="bot-title">Coverage Summary</div>';
   html+='<table class="bot-table" style="width:100%">';
   html+='<thead><tr><th>Category</th><th>Total Need (workers)</th><th>Assigned</th><th>Gap</th>';
@@ -3167,6 +3188,11 @@ function renderAssignmentsPage(){
   html+='</tbody></table></div>';
 
   document.getElementById('pageContent').innerHTML=html;
+}
+
+function setAsTab(tab){
+  window._asTab=tab;
+  renderAssignmentsPage();
 }
 
 /* ============================================================
