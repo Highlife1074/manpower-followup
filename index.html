@@ -409,6 +409,8 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .wbs-even .rwbs td,.wbs-odd .rwbs td{border-top:2px solid var(--border3)!important;}
 /* Group separator row — strong top border */
 .group-sep-row td{border-top:4px solid #8a8070!important;background:var(--bg)!important;height:4px!important;}
+.wbs-sep-row td{border-top:2px solid #b8b0a4!important;background:var(--bg2)!important;height:3px!important;}
+.sg-sep-row td{border-top:3px solid #a09890!important;background:var(--bg)!important;height:3px!important;}
 </style>
 </head>
 <body>
@@ -1003,6 +1005,7 @@ function budBody(locked){
       for(var i=0;i<dw.length;i++) h+=wbsBudRows(dw[i],1,locked,i===dw.length-1&&g.sub.length===0);
       for(var si=0;si<g.sub.length;si++){
         var sg=g.sub[si]; var sgW=filterW(sg.id);
+        h+='<tr class="sg-sep-row"><td colspan="'+(5+NM+1)+'"></td></tr>';
         h+=sgRow(sg,sgW,locked);
         if(!sg.col) for(var i=0;i<sgW.length;i++) h+=wbsBudRows(sgW[i],2,locked,i===sgW.length-1&&si===g.sub.length-1);
       }
@@ -1049,7 +1052,10 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
   if(window._wbsIdx===undefined) window._wbsIdx=0;
   var wbsCls=(window._wbsIdx%2===0)?'wbs-even':'wbs-odd';
   window._wbsIdx++;
+  h+='<tr class="wbs-sep-row"><td colspan="'+(6+NM)+'"></td></tr>';
   var h='';
+  /* WBS separator row — thin line before each WBS block */
+  h+='<tr class="wbs-sep-row"><td colspan="'+(5+NM+1)+'"></td></tr>';
 
   /* ── WBS header row (name + company, no spec — spec is per sub-row) ── */
   h+='<tr class="rwbs '+wbsCls+'" '+(locked?'':drag('W',w.id))+'>';
@@ -1262,6 +1268,7 @@ function ccBody(page){
       for(var i=0;i<dw.length;i++) h+=wbsCCRows(dw[i],1,page,i===dw.length-1&&g.sub.length===0);
       for(var si=0;si<g.sub.length;si++){
         var sg=g.sub[si]; var sgW=filterW(sg.id);
+        h+='<tr class="sg-sep-row"><td colspan="'+(6+NM)+'"></td></tr>';
         h+=ccSgRow(sg,sgW,page);
         if(!sg.col) for(var i=0;i<sgW.length;i++) h+=wbsCCRows(sgW[i],2,page,i===sgW.length-1&&si===g.sub.length-1);
       }
@@ -1339,6 +1346,7 @@ function wbsCCRows(w,lv,page,isLast){
   if(window._wbsIdx===undefined) window._wbsIdx=0;
   var wbsCls=(window._wbsIdx%2===0)?'wbs-even':'wbs-odd';
   window._wbsIdx++;
+  h+='<tr class="wbs-sep-row"><td colspan="'+(6+NM)+'"></td></tr>';
 
   /* WBS header */
   h+='<tr class="rwbs '+wbsCls+'">';
