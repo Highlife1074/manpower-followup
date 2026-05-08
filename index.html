@@ -327,7 +327,15 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .as-cell{min-width:80px;min-height:44px;padding:3px 4px;position:relative;}
 .as-bud{font-family:var(--mono);font-size:9px;color:var(--tx3);margin-bottom:2px;}
 .as-names{display:flex;flex-wrap:wrap;gap:2px;}
-.as-chip{font-size:9px;font-weight:600;padding:1px 5px;border-radius:10px;background:var(--gl);color:var(--green);cursor:default;white-space:nowrap;}
+
+/* Worker chip — clickable with remove popover */
+.as-chip{font-size:9px;font-weight:600;padding:2px 6px;border-radius:10px;background:var(--gl);color:var(--green);cursor:pointer;white-space:nowrap;position:relative;user-select:none;}
+.as-chip:hover{opacity:.85;}
+.chip-pop{position:fixed;background:var(--white);border:1.5px solid var(--border2);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:500;padding:6px 0;min-width:130px;animation:mIn .1s ease;}
+.chip-pop-name{font-size:11px;font-weight:700;color:var(--tx);padding:4px 12px 6px;border-bottom:1px solid var(--border);}
+.chip-pop-btn{display:block;width:100%;text-align:left;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;border:none;background:none;color:var(--red);font-family:var(--font);}
+.chip-pop-btn:hover{background:var(--rl);}
+
 .as-chip.exp{background:var(--rl);color:var(--red);}
 .as-add{font-size:10px;color:var(--blue);cursor:pointer;padding:1px 4px;border-radius:8px;border:1px dashed var(--bm);display:inline-block;margin-top:1px;line-height:1.4;}
 .as-add:hover{background:var(--bl);}
@@ -3168,7 +3176,7 @@ function renderAssignmentsPage(){
           var isExp=!workerActiveInMonth(wk2,ML[m]?ML[m].month:m,ML[m]?ML[m].year:YEAR);
           var fmA=getForeman(wbs.id,m);
           var isFmWk=(fmA&&fmA.workerId===wk2.id);
-          html+='<span class="as-chip'+(isExp?' exp':'')+(isFmWk?' fm':'')+'" data-wid="'+wk2.id+'" data-m="'+m+'" onclick="remAssign(this)">'+wk2.name.split(' ')[0]+(isExp?' !':'')+'</span>';
+          html+='<span class="as-chip'+(isExp?' exp':'')+(isFmWk?' fm':'')+'" data-wid="'+wk2.id+'" data-wbs="'+wbs.id+'" data-m="'+m+'" onclick="showChipPop(event,this)">'+wk2.name.split(' ')[0]+(isExp?' !':'')+'</span>';
         }
         html+='</div>';
         html+='<span class="as-add" data-wbs="'+wbs.id+'" data-m="'+m+'" onclick="openWP(this)">+ assign</span>';
@@ -3379,9 +3387,12 @@ function openWorkerPicker(btn,wbsId,month){
         statusHtml='<span class="wc-status" style="background:var(--bg2);color:var(--tx3)">Out of contract</span>';
       } else if(asgnHere){
         cardCls+=' '+(stg==='remove'?'wc-remove':'wc-staged');
-        var lbl=stg==='remove'?'Click to re-add':'&#10003; Assigned'+(isFm?' &#9733; Foreman':'');
-        statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">'+lbl+'</span>';
-        if(stg==='remove') statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">Will be removed</span>';
+        if(stg==='remove'){
+          statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">✕ Will be removed</span>';
+        } else {
+          statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">✓ Assigned'+(isFm?' ★':'')+'</span>'+
+            '<span class="wc-status" style="background:var(--rl);color:var(--red);margin-top:3px;font-size:8px">click to remove</span>';
+        }
         clickable=true;
       } else if(asgn&&!stg){
         /* assigned elsewhere and no staged change */
@@ -3490,6 +3501,35 @@ function wkPickSave(){
 }
 
 function remAssign(el){removeAssignment(el.dataset.wid,parseInt(el.dataset.m));}
+
+function showChipPop(e,el){
+  e.stopPropagation();
+  /* Remove any existing popover */
+  var old=document.getElementById('chipPop');if(old)old.remove();
+  var wid=el.dataset.wid; var m=parseInt(el.dataset.m); var wbsId=el.dataset.wbs;
+  var wk=getWorker(wid); if(!wk) return;
+  var pop=document.createElement('div');
+  pop.id='chipPop'; pop.className='chip-pop';
+  pop.innerHTML='<div class="chip-pop-name">'+wk.name+'</div>'+
+    '<button class="chip-pop-btn" onclick="chipRemove(\''+wid+'\','+m+')">&#128465; Remove from this month</button>';
+  /* Position near click */
+  pop.style.top=(e.clientY+6)+'px';
+  pop.style.left=Math.min(e.clientX,window.innerWidth-160)+'px';
+  document.body.appendChild(pop);
+  /* Close on outside click */
+  setTimeout(function(){
+    document.addEventListener('click',function _close(){
+      var p=document.getElementById('chipPop');if(p)p.remove();
+      document.removeEventListener('click',_close);
+    });
+  },0);
+}
+
+function chipRemove(wid,m){
+  var old=document.getElementById('chipPop');if(old)old.remove();
+  removeAssignment(wid,m);
+  renderAssignmentsPage();
+}
 function removeAssignment(workerId,month){
   if(!confirm('Remove this worker from this month?')) return;
   var rYr=ML[month]?ML[month].year:YEAR;
