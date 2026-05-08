@@ -217,6 +217,8 @@ td.edt:empty::after{content:'—';color:var(--border2);font-family:var(--mono);f
 
 /* MODAL */
 .mbg{position:fixed;inset:0;background:rgba(20,25,50,.38);display:flex;align-items:center;justify-content:center;z-index:300;backdrop-filter:blur(5px);padding:2vh 2vw;}
+.mbg.fullscreen-picker{padding:0;background:rgba(20,25,50,.6);align-items:stretch;justify-content:stretch;}
+.mbg.fullscreen-picker .wk-pick-modal{width:100%;height:100%;border-radius:0;max-height:100vh;}
 .modal{background:var(--white);border:1.5px solid var(--border2);border-radius:14px;padding:22px 26px;min-width:320px;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(66,96,245,.18);animation:mIn .17s ease;}
 @keyframes mIn{from{opacity:0;transform:scale(.95) translateY(5px)}to{opacity:1;transform:none}}
 .modal h3{font-size:15px;font-weight:700;margin-bottom:14px;}
@@ -354,7 +356,7 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .sug-item .sug-del:hover{color:var(--red);}
 
 /* Worker assignment modal */
-.wk-pick-modal{background:var(--white);border-radius:12px;padding:0;width:min(1400px,96vw);height:92vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.22);overflow:hidden;}
+.wk-pick-modal{background:var(--white);border-radius:0;padding:0;width:100%;height:100%;display:flex;flex-direction:column;box-shadow:none;overflow:hidden;}
 .wk-pick-header{padding:20px 24px 14px;border-bottom:1px solid var(--border2);flex-shrink:0;}
 .wk-pick-header h3{font-size:16px;font-weight:800;color:var(--tx);margin-bottom:4px;}
 .wk-pick-header .subtitle{font-size:12px;color:var(--tx3);}
@@ -424,6 +426,10 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .as-cell-sel .as-month-cb{display:block;}
 .as-sel-bar{display:flex;align-items:center;gap:8px;padding:4px 8px;background:var(--blue);color:#fff;border-radius:8px;font-size:11px;font-weight:600;margin:2px 0;flex-wrap:wrap;}
 .as-sel-bar .btn{background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:10px;padding:2px 8px;}
+
+/* Nuclear fullscreen override for picker */
+.mbg.fullscreen-picker{padding:0 !important;align-items:stretch !important;justify-content:stretch !important;}
+.mbg.fullscreen-picker > div{width:100% !important;max-width:100% !important;height:100% !important;max-height:100% !important;border-radius:0 !important;margin:0 !important;}
 </style>
 </head>
 <body>
@@ -437,7 +443,7 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 <div class="recap-bar" id="recapBar"></div>
 <div class="page" id="pageContent"></div>
 <div class="mbg" id="mbg" style="display:none">
-  <div class="modal" id="mbox"></div>
+  <div id="mbox"></div>
 </div>
 
 <script>
@@ -2101,6 +2107,7 @@ function changeSubSpec(wbsId,srId,sel){
    ============================================================ */
 function openModal(type,id){
   var box=document.getElementById('mbox');
+  box.className='modal'; /* standard sizing */
   if(type==='companies'){renderCompanyModal(box);document.getElementById('mbg').style.display='flex';return;}
   var h='';
   function grpOpts(sel){var o='';for(var i=0;i<S.groups.length;i++){var g=S.groups[i];o+='<option value="'+g.id+'"'+(sel===g.id?' selected':'')+'>'+g.name+'</option>';for(var j=0;j<g.sub.length;j++){var sg=g.sub[j];o+='<option value="'+sg.id+'"'+(sel===sg.id?' selected':'')+'>  -- '+sg.name+'</option>';}}return o;}
@@ -2240,7 +2247,7 @@ function submitPin(action){
     S.pin=nw; saveS(); closeModal(); alert('PIN updated.');
   }
 }
-function closeModal(){document.getElementById('mbg').style.display='none';}
+function closeModal(){var mb=document.getElementById('mbg');mb.style.display='none';mb.className='mbg';var bx=document.getElementById('mbox');bx.innerHTML='';bx.className='';bx.style.cssText='';}
 
 /* ============================================================
    CRUD HELPERS
@@ -3411,7 +3418,8 @@ function openWorkerPicker(btn,wbsId,month){
     h+='</div>'; /* end wk-pick-modal */
 
     box.innerHTML=h;
-    document.getElementById('mbg').style.display='flex';
+    var _mbg=document.getElementById('mbg');_mbg.style.display='flex';_mbg.className='mbg fullscreen-picker';
+    var _bx=document.getElementById('mbox');_bx.className='';_bx.style.cssText='width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden;';
     /* Restore filter focus */
     if(ft){var f=document.getElementById('wkPickFilter');if(f){f.focus();f.setSelectionRange(ft.length,ft.length);}}
   }
@@ -4079,7 +4087,8 @@ function openWorkerPickerMulti(wbsId,months){
     h+='</div></div>';
 
     box.innerHTML=h;
-    document.getElementById('mbg').style.display='flex';
+    var _mbg2=document.getElementById('mbg');_mbg2.style.display='flex';_mbg2.className='mbg fullscreen-picker';
+    var _bx2=document.getElementById('mbox');_bx2.className='';_bx2.style.cssText='width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden;';
     if(ft){var f=document.getElementById('wkPickFilter');if(f){f.focus();f.setSelectionRange(ft.length,ft.length);}}
   }
 
