@@ -3145,16 +3145,6 @@ function renderAssignmentsPage(){
       /* Multi-month selection state per WBS */
       var wbsSel=window._asSel&&window._asSel[wbs.id]?window._asSel[wbs.id]:{};
       var selMonths=Object.keys(wbsSel).filter(function(k){return wbsSel[k];}).map(Number);
-      /* Selection toolbar if months selected */
-      if(selMonths.length>0){
-        html+='<td colspan="'+(1+NM)+'" style="padding:4px 8px;background:var(--bl)">';
-        html+='<div class="as-sel-bar">';
-        html+='<span>'+selMonths.length+' month'+(selMonths.length>1?'s':'')+' selected</span>';
-        html+='<button class="btn" onclick="asClearSel(\''+wbs.id+'\')" style="color:#fff">✕ Clear</button>';
-        html+='<button class="btn" style="background:var(--green);border-color:var(--gm);color:#fff" onclick="asOpenPicker(\''+wbs.id+'\')" >&#128101; Assign workers</button>';
-        html+='</div></td>';
-        html+='</tr><tr>';
-      }
       for(var m=0;m<NM;m++){
         var budHM=bud(wbs,m);
         var workers=getWBSWorkers(wbs.id,m);
@@ -3183,6 +3173,19 @@ function renderAssignmentsPage(){
         html+='</div></td>';
       }
       html+='</tr>';
+      /* Selection toolbar — separate row, never breaks column alignment */
+      if(selMonths.length>0){
+        html+='<tr style="background:#fff3e0">';
+        html+='<td class="ap1" style="padding:4px 10px;font-size:11px;font-weight:700;color:var(--ora)">';
+        html+=selMonths.length+' month'+(selMonths.length>1?'s':'')+' selected</td>';
+        html+='<td style="padding:3px 6px"></td>';
+        html+='<td colspan="'+NM+'" style="padding:3px 8px">';
+        html+='<div style="display:flex;gap:6px;align-items:center">';
+        html+='<button class="btn" style="padding:3px 8px;font-size:10px" onclick="asClearSel(\''+wbs.id+'\')" >✕ Clear</button>';
+        html+='<button class="btn" style="padding:3px 10px;font-size:10px;background:var(--green);border-color:var(--gm);color:#fff" onclick="asOpenPicker(\''+wbs.id+'\')" >&#128101; Assign '+selMonths.length+' month'+(selMonths.length>1?'s':'')+'</button>';
+        html+='</div></td>';
+        html+='</tr>';
+      }
     }
   }
   html+='</tbody></table></div>';
