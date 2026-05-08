@@ -216,7 +216,7 @@ td.edt:empty::after{content:'—';color:var(--border2);font-family:var(--mono);f
 .pin-err{font-size:11px;color:var(--red);min-height:16px;margin-bottom:8px;}
 
 /* MODAL */
-.mbg{position:fixed;inset:0;background:rgba(20,25,50,.38);display:flex;align-items:center;justify-content:center;z-index:300;backdrop-filter:blur(5px);}
+.mbg{position:fixed;inset:0;background:rgba(20,25,50,.38);display:flex;align-items:center;justify-content:center;z-index:300;backdrop-filter:blur(5px);padding:2vh 2vw;}
 .modal{background:var(--white);border:1.5px solid var(--border2);border-radius:14px;padding:22px 26px;min-width:320px;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(66,96,245,.18);animation:mIn .17s ease;}
 @keyframes mIn{from{opacity:0;transform:scale(.95) translateY(5px)}to{opacity:1;transform:none}}
 .modal h3{font-size:15px;font-weight:700;margin-bottom:14px;}
@@ -354,7 +354,7 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .sug-item .sug-del:hover{color:var(--red);}
 
 /* Worker assignment modal */
-.wk-pick-modal{background:var(--white);border-radius:16px;padding:0;width:min(900px,95vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.22);overflow:hidden;}
+.wk-pick-modal{background:var(--white);border-radius:12px;padding:0;width:min(1400px,96vw);height:92vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.22);overflow:hidden;}
 .wk-pick-header{padding:20px 24px 14px;border-bottom:1px solid var(--border2);flex-shrink:0;}
 .wk-pick-header h3{font-size:16px;font-weight:800;color:var(--tx);margin-bottom:4px;}
 .wk-pick-header .subtitle{font-size:12px;color:var(--tx3);}
@@ -365,7 +365,7 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .wk-pick-legend span{display:flex;align-items:center;gap:4px;}
 .wk-pick-legend .ldot{width:10px;height:10px;border-radius:3px;display:inline-block;}
 .wk-pick-body{overflow-y:auto;flex:1;padding:16px 24px;}
-.wk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;}
+.wk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;}
 .wk-card{border:2px solid var(--border2);border-radius:10px;padding:11px 14px;cursor:pointer;transition:border .13s,background .13s,transform .1s;position:relative;}
 .wk-card:hover{border-color:var(--blue);background:var(--bl);transform:translateY(-1px);}
 .wk-card.wc-staged{border-color:var(--green)!important;background:var(--gl)!important;}
