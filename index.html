@@ -89,7 +89,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--font);font-size:13px
 .rs2{font-size:10px;color:var(--tx3);}
 
 /* PAGE */
-.page{flex:1;overflow:hidden;display:flex;flex-direction:column;position:relative;}
+.page{flex:1;overflow:hidden;display:flex;flex-direction:column;position:relative;min-height:0;}
 .cc-banner{display:flex;align-items:center;gap:12px;padding:7px 16px;background:linear-gradient(90deg,#f0ede8,#eaf0f7);border-bottom:1px solid var(--border2);flex-shrink:0;flex-wrap:wrap;}
 .cc-banner .ctitle{font-weight:700;font-size:13px;color:var(--pur);}
 .cc-legend{display:flex;gap:10px;align-items:center;margin-left:auto;flex-wrap:wrap;}
@@ -287,7 +287,7 @@ tr.dragging{opacity:.3;} tr.dov td{border-top:2px solid var(--blue)!important;}
 .wk-table tr:hover td{background:var(--bg2);}
 .wk-table tr.wk-selected td{background:#eaf0f7!important;}
 .wk-table tr.wk-selected:hover td{background:#d8e8f4!important;}
-.wk-sel-bar{display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--blue);color:#fff;font-size:12px;font-weight:600;flex-shrink:0;animation:slideDown .15s ease;}
+.wk-sel-bar{display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--blue);color:#fff;font-size:12px;font-weight:600;flex-shrink:0;animation:slideDown .15s ease;flex-wrap:wrap;}
 @keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 .wk-sel-bar .scount{background:rgba(255,255,255,.25);border-radius:20px;padding:2px 10px;font-family:var(--mono);}
 .wk-sel-bar .btn{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;font-size:11px;}
@@ -314,7 +314,7 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .ms-out{background:#e8e0d8;}
 
 /* Assignment grid */
-.as-grid{overflow:auto;flex:1;}
+.as-grid{overflow:auto;flex:1;min-height:0;}
 .as-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:11px;}
 .as-table th{background:var(--bg2);padding:5px 8px;border-bottom:2px solid var(--border2);border-right:1px solid var(--border);font-size:10px;font-weight:700;color:var(--tx3);white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;z-index:5;}
 .as-table th.ap1{position:sticky;left:0;z-index:10;text-align:left;min-width:200px;}
@@ -416,6 +416,14 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .cc-reel-eur-row td{background:#fff8f0!important;}
 .cc-rad-hm-row td{background:#fffbf0!important;}
 .cc-contract-recap td{background:#f8f4ee!important;font-size:10px;}
+
+/* Multi-month assignment selection */
+.as-cell-sel{background:rgba(61,90,128,.12)!important;outline:2px solid var(--blue)!important;}
+.as-month-cb{position:absolute;top:3px;right:3px;width:14px;height:14px;cursor:pointer;accent-color:var(--blue);display:none;}
+.as-cell:hover .as-month-cb{display:block;}
+.as-cell-sel .as-month-cb{display:block;}
+.as-sel-bar{display:flex;align-items:center;gap:8px;padding:4px 8px;background:var(--blue);color:#fff;border-radius:8px;font-size:11px;font-weight:600;margin:2px 0;flex-wrap:wrap;}
+.as-sel-bar .btn{background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:10px;padding:2px 8px;}
 </style>
 </head>
 <body>
@@ -1533,9 +1541,14 @@ function renderInvSection(page){
   calcAmt=Math.round(calcAmt);
   var hrsEntered=+(inv.hrs||0); var amtEntered=+(inv.amt||0);
 
-  var h='<div class="inv-section">';
-  h+='<div class="inv-title"><span class="cl-dot" style="background:var(--pur);width:10px;height:10px;border-radius:3px;display:inline-block"></span>';
-  h+='Variance analysis — '+(ML[page]?ML[page].label:MONTHS[page]+' '+YEAR)+'</div>';
+  var collapsed=_botCollapsed.inv;
+  var h='<div class="inv-section" style="'+(collapsed?'padding:6px 16px':'')+'">';
+  h+='<div class="inv-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="_botCollapsed.inv=!_botCollapsed.inv;render()">';
+  h+='<span><span class="cl-dot" style="background:var(--pur);width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:6px"></span>';
+  h+='Variance analysis — '+(ML[page]?ML[page].label:MONTHS[page]+' '+YEAR)+'</span>';
+  h+='<span style="font-size:14px;color:var(--tx3)">'+(collapsed?'▶':'▼')+'</span>';
+  h+='</div>';
+  if(collapsed){h+='</div>';return h;}
 
   /* === TABLEAU DES ECARTS === */
   h+='<table class="bot-table" style="margin-bottom:12px;width:100%">';
@@ -1693,8 +1706,13 @@ function saveInvCo(page,coId,val){
    BOTTOM RECAP TABLE (CC page)
    ============================================================ */
 function renderBotRecap(page){
-  var h='<div class="bot-recap">';
-  h+='<div class="bot-title">Workers summary — '+(ML[page]?ML[page].label:MONTHS[page]+' '+YEAR)+'</div>';
+  var collapsed=_botCollapsed.bot;
+  var h='<div class="bot-recap" style="'+(collapsed?'padding:6px 16px':'')+'">';
+  h+='<div class="bot-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;margin-bottom:'+(collapsed?'0':'8px')+'" onclick="_botCollapsed.bot=!_botCollapsed.bot;render()">';
+  h+='<span>Workers summary — '+(ML[page]?ML[page].label:MONTHS[page]+' '+YEAR)+'</span>';
+  h+='<span style="font-size:14px;color:var(--tx3)">'+(collapsed?'▶':'▼')+'</span>';
+  h+='</div>';
+  if(collapsed){h+='</div>';return h;}
   h+='<table class="bot-table">';
   h+='<thead><tr><th>Category</th><th>Budget MM</th><th>Actual MM</th><th>Variance</th>';
   for(var i=0;i<SPECS.length-1;i++) h+='<th>'+SPECS[i].label+'</th>';
@@ -2757,7 +2775,7 @@ function renderWorkersPage(){
   html+='</div>';
 
   /* Workers table */
-  html+='<div class="tw" style="overflow:auto;flex:1;">';
+  html+='<div class="tw" style="overflow:auto;flex:1;min-height:0">';
   html+='<table class="wk-table" id="wkTable">';
   html+='<thead><tr>';
   html+='<th style="width:32px;text-align:center"><input class="wk-cb" type="checkbox" id="wkCbAll" onchange="wkToggleAll(this)" title="Select all"></th>';
@@ -2823,7 +2841,7 @@ function renderWorkersPage(){
 }
 
 function renderCoverageSummary(){
-  var html='<div class="bot-recap" style="flex:1;overflow-y:auto">';
+  var html='<div style="flex:1;overflow-y:auto;padding:12px 16px">';
   html+='<div class="bot-title">Coverage Summary</div>';
   html+='<table class="bot-table" style="width:100%">';
   html+='<thead><tr><th>Category</th><th>Total Need (workers)</th><th>Assigned</th><th>Gap</th>';
@@ -2905,6 +2923,31 @@ function deleteWorker(id){
   S.workers=S.workers.filter(function(w){return w.id!==id;});
   S.assignments=S.assignments.filter(function(a){return a.workerId!==id;});
   render();
+}
+
+
+/* ---- Multi-month assignment selection ---- */
+window._asSel={};  /* {wbsId: {month: bool}} */
+
+function asToggleMon(wbsId,m,checked){
+  if(!window._asSel) window._asSel={};
+  if(!window._asSel[wbsId]) window._asSel[wbsId]={};
+  window._asSel[wbsId][m]=checked;
+  /* Re-render assignments without closing picker */
+  renderAssignmentsPage();
+}
+
+function asClearSel(wbsId){
+  if(window._asSel) window._asSel[wbsId]={};
+  renderAssignmentsPage();
+}
+
+function asOpenPicker(wbsId){
+  var sel=window._asSel&&window._asSel[wbsId]?window._asSel[wbsId]:{};
+  var months=Object.keys(sel).filter(function(k){return sel[k];}).map(Number);
+  if(!months.length) return;
+  /* Open multi-month version of picker */
+  openWorkerPickerMulti(wbsId,months);
 }
 
 /* ---- Multi-select worker management ---- */
@@ -3042,7 +3085,7 @@ function renderAssignmentsPage(){
 
   /* Sub-tab: Assign or Overview */
   if(!window._asTab) window._asTab='assign';
-  var html='<div style="display:flex;gap:6px;padding:8px 16px 0;border-bottom:1px solid var(--border2);background:var(--bg2);flex-shrink:0">';
+  var html='<div style="display:flex;gap:6px;padding:6px 16px;border-bottom:1px solid var(--border2);background:var(--bg2);flex-shrink:0;align-items:center">';
   html+='<button class="btn'+(window._asTab==='assign'?' pri':'')+' " onclick="setAsTab(\'assign\')">&#128203; Assignments</button>';
   html+='<button class="btn'+(window._asTab==='overview'?' pri':'')+' " onclick="setAsTab(\'overview\')">&#128200; Coverage Overview</button>';
   html+='</div>';
@@ -3054,7 +3097,7 @@ function renderAssignmentsPage(){
   }
 
   /* Assignment grid */
-  html+='<div class="as-grid"><table class="as-table"><thead><tr>';
+  html+='<div class="as-grid" style="flex:1;overflow:auto;min-height:0"><table class="as-table"><thead><tr>';
   html+='<th class="ap1">WBS</th>';
   html+='<th class="ap2">Budget</th>';
   for(var m=0;m<NM;m++){
@@ -3084,30 +3127,44 @@ function renderAssignmentsPage(){
       html+='<tr>';
       html+='<td class="ap1"><span class="codb">'+wbs.code+'</span> '+wbs.name+'</td>';
       html+='<td class="ap2 num" style="color:var(--blue)">'+bt.toFixed(1)+'</td>';
+      /* Multi-month selection state per WBS */
+      var wbsSel=window._asSel&&window._asSel[wbs.id]?window._asSel[wbs.id]:{};
+      var selMonths=Object.keys(wbsSel).filter(function(k){return wbsSel[k];}).map(Number);
+      /* Selection toolbar if months selected */
+      if(selMonths.length>0){
+        html+='<td colspan="'+(1+NM)+'" style="padding:4px 8px;background:var(--bl)">';
+        html+='<div class="as-sel-bar">';
+        html+='<span>'+selMonths.length+' month'+(selMonths.length>1?'s':'')+' selected</span>';
+        html+='<button class="btn" onclick="asClearSel(\''+wbs.id+'\')" style="color:#fff">✕ Clear</button>';
+        html+='<button class="btn" style="background:var(--green);border-color:var(--gm);color:#fff" onclick="asOpenPicker(\''+wbs.id+'\')" >&#128101; Assign workers</button>';
+        html+='</div></td>';
+        html+='</tr><tr>';
+      }
       for(var m=0;m<NM;m++){
         var budHM=bud(wbs,m);
         var workers=getWBSWorkers(wbs.id,m);
         var nW=workers.length;
-        var cellCls='as-cell';
+        var isSel=wbsSel[m]||false;
+        var cellCls='as-cell'+(isSel?' as-cell-sel':'');
         if(budHM>0){
           if(nW===0) cellCls+=' as-alert-red';
           else if(nW<Math.ceil(budHM)) cellCls+=' as-alert-ora';
           else cellCls+=' as-alert-ok';
         }
-        html+='<td><div class="'+cellCls+'">';
-        if(budHM>0) html+='<div class="as-bud">Bud: '+budHM.toFixed(1)+' HM / Need: '+Math.ceil(budHM)+'w</div>';
+        html+='<td style="position:relative"><div class="'+cellCls+'">';
+        /* Checkbox for multi-select */
+        html+='<input type="checkbox" class="as-month-cb" '+(isSel?'checked':'')+' onchange="asToggleMon(\''+wbs.id+'\','+m+',this.checked)">';
+        if(budHM>0) html+='<div class="as-bud">Bud: '+budHM.toFixed(1)+' / '+Math.ceil(budHM)+'w</div>';
         html+='<div class="as-names">';
         for(var k=0;k<workers.length;k++){
           var wk2=workers[k];
-          var isExp=!workerActiveInMonth(wk2,m);
+          var isExp=!workerActiveInMonth(wk2,ML[m]?ML[m].month:m,ML[m]?ML[m].year:YEAR);
           var fmA=getForeman(wbs.id,m);
           var isFmWk=(fmA&&fmA.workerId===wk2.id);
           html+='<span class="as-chip'+(isExp?' exp':'')+(isFmWk?' fm':'')+'" data-wid="'+wk2.id+'" data-m="'+m+'" onclick="remAssign(this)">'+wk2.name.split(' ')[0]+(isExp?' !':'')+'</span>';
         }
         html+='</div>';
-        if(budHM>0||true){
         html+='<span class="as-add" data-wbs="'+wbs.id+'" data-m="'+m+'" onclick="openWP(this)">+ assign</span>';
-        }
         html+='</div></td>';
       }
       html+='</tr>';
@@ -3118,7 +3175,7 @@ function renderAssignmentsPage(){
 }
 
 function renderCoverageSummary(){
-  var html='<div class="bot-recap" style="flex:1;overflow-y:auto">';
+  var html='<div style="flex:1;overflow-y:auto;padding:12px 16px">';
   html+='<div class="bot-title">Coverage Summary</div>';
   html+='<table class="bot-table" style="width:100%">';
   html+='<thead><tr><th>Category</th><th>Total Need (workers)</th><th>Assigned</th><th>Gap</th>';
@@ -3199,6 +3256,7 @@ function setAsTab(tab){
    WORKER PICKER MODAL
    ============================================================ */
 var pickerOpen=null;
+var _botCollapsed={inv:false,bot:false};
 function openWP(el){openWorkerPicker(el,el.dataset.wbs,parseInt(el.dataset.m));}
 
 function openWorkerPicker(btn,wbsId,month){
@@ -3912,6 +3970,173 @@ function ecSubRow(td){
   openInput(td,cur,'var(--blue)',function(v){setSubRowBudSlot(sr,mi,v);});
 }
 
+
+function openWorkerPickerMulti(wbsId,months){
+  pickerOpen={wbsId:wbsId,month:months[0]};
+  var staged={};
+  var wbsName=''; for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wbsId){wbsName=S.wbs[i].name;break;}
+
+  function buildModal(filterText){
+    var ft=(filterText||'').toLowerCase();
+    var box=document.getElementById('mbox');
+    var monthLabels=months.map(function(m){return ML[m]?ML[m].short:MS[m];}).join(', ');
+
+    var h='<div class="wk-pick-modal">';
+    h+='<div class="wk-pick-header">';
+    h+='<h3>&#128101; Assign Workers — '+wbsName+'</h3>';
+    h+='<div class="subtitle">'+months.length+' months selected: <strong>'+monthLabels+'</strong></div>';
+    h+='</div>';
+
+    h+='<div class="wk-pick-filters">';
+    h+='<input type="text" id="wkPickFilter" placeholder="&#128269; Search..." value="'+ft+'" oninput="wkPickFilter(this.value)">';
+    h+='<div class="wk-pick-legend">';
+    h+='<span><span class="ldot" style="background:var(--green);border:2px solid var(--gm)"></span>Available all months</span>';
+    h+='<span><span class="ldot" style="background:#fff7e0;border:2px solid var(--amber)"></span>Partial availability</span>';
+    h+='<span><span class="ldot" style="background:var(--rl);border:2px solid var(--red)"></span>Busy all months</span>';
+    h+='</div>';
+    h+='<div class="wk-pick-fm-wrap"><input type="checkbox" id="wpFm" style="width:15px;height:15px;accent-color:var(--amber)"><label for="wpFm" style="cursor:pointer">&#9733; Foreman</label></div>';
+    h+='</div>';
+
+    h+='<div class="wk-pick-body"><div class="wk-grid" id="wkPickGrid">';
+
+    var workers=S.workers.slice();
+    workers.sort(function(a,b){
+      function rank(wk){
+        /* Count free months */
+        var free=0;
+        for(var mi=0;mi<months.length;mi++){
+          var m=months[mi];
+          var sl=ML[m]; if(!sl) continue;
+          if(!workerActiveInMonth(wk,sl.month,sl.year)) return 3;
+          var asgn=getAssignmentSlot(wk.id,m);
+          if(!asgn||asgn.wbsId===wbsId) free++;
+        }
+        return free===months.length?0:free>0?1:2;
+      }
+      return rank(a)-rank(b);
+    });
+
+    for(var i=0;i<workers.length;i++){
+      var wk=workers[i];
+      if(ft){var ss=(wk.name+' '+specLabel(wk.spec)+' '+(getCompany(wk.companyId)?getCompany(wk.companyId).name:'')).toLowerCase();if(ss.indexOf(ft)<0)continue;}
+
+      /* Check availability across months */
+      var freeMonths=[],busyMonths=[],assignedHereMonths=[];
+      var outOfContract=false;
+      for(var mi=0;mi<months.length;mi++){
+        var m=months[mi]; var sl=ML[m]; if(!sl) continue;
+        if(!workerActiveInMonth(wk,sl.month,sl.year)){outOfContract=true;break;}
+        var asgn=getAssignmentSlot(wk.id,m);
+        if(!asgn) freeMonths.push(m);
+        else if(asgn.wbsId===wbsId) assignedHereMonths.push(m);
+        else busyMonths.push(m);
+      }
+
+      var stg=staged[wk.id]||'';
+      var co=getCompany(wk.companyId); var coName=co?co.name:'';
+      var sl2=specLabel(wk.spec);
+
+      var cardCls='wk-card';
+      var statusHtml='';
+      var clickable=false;
+
+      if(outOfContract){
+        cardCls+=' wc-out';
+        statusHtml='<span class="wc-status" style="background:var(--bg2);color:var(--tx3)">Out of contract</span>';
+      } else if(stg==='add'||stg==='add-foreman'){
+        cardCls+=' wc-staged';
+        statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">Will be assigned ('+months.length+'m)</span>';
+        clickable=true;
+      } else if(stg==='remove'){
+        cardCls+=' wc-remove';
+        statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">Will be removed</span>';
+        clickable=true;
+      } else if(freeMonths.length===months.length){
+        cardCls+=' available';
+        statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">Free all '+months.length+' months</span>';
+        clickable=true;
+      } else if(freeMonths.length>0||assignedHereMonths.length>0){
+        cardCls+=' available';
+        statusHtml='<span class="wc-status" style="background:#fff7e0;color:var(--amber)">Free '+freeMonths.length+'/'+(months.length)+'m</span>';
+        clickable=true;
+      } else {
+        cardCls+=' wc-elsewhere';
+        statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">Busy all months</span>';
+      }
+
+      h+='<div class="'+cardCls+'" '+(clickable?'data-wid="'+wk.id+'" onclick="wkMultiToggle(this)"':'')+' >';
+      h+='<div class="wc-name">'+wk.name+'</div>';
+      h+='<div class="wc-meta">'+(coName||'—')+(sl2?' · <span class="spsel sk-'+wk.spec+'" style="cursor:default;font-size:9px;padding:1px 5px">'+sl2+'</span>':'')+'</div>';
+      h+=statusHtml;
+      h+='</div>';
+    }
+
+    h+='</div></div>';
+    h+='<div class="wk-pick-footer">';
+    h+='<div class="fp-info">'+(Object.keys(staged).length?'<strong>'+Object.keys(staged).length+' workers</strong> × '+months.length+' months':'Click workers to assign across all selected months')+'</div>';
+    h+='<button class="btn" onclick="wkMultiClose()">Cancel</button>';
+    h+='<button class="btn pri" onclick="wkMultiSave()">✓ Save & Close</button>';
+    h+='</div></div>';
+
+    box.innerHTML=h;
+    document.getElementById('mbg').style.display='flex';
+    if(ft){var f=document.getElementById('wkPickFilter');if(f){f.focus();f.setSelectionRange(ft.length,ft.length);}}
+  }
+
+  window._multiStaged=staged;
+  window._multiMonths=months;
+  window._multiWbsId=wbsId;
+  window._multiRebuild=buildModal;
+  buildModal('');
+}
+
+function wkMultiToggle(el){
+  var wid=el.dataset.wid;
+  var staged=window._multiStaged;
+  var isFm=document.getElementById('wpFm')&&document.getElementById('wpFm').checked;
+  if(staged[wid]) delete staged[wid];
+  else staged[wid]=isFm?'add-foreman':'add';
+  window._multiRebuild(document.getElementById('wkPickFilter')?document.getElementById('wkPickFilter').value:'');
+}
+
+function wkMultiClose(){
+  window._multiStaged={};
+  if(window._asSel&&window._multiWbsId) window._asSel[window._multiWbsId]={};
+  closeModal();
+  renderAssignmentsPage();
+}
+
+function wkMultiSave(){
+  var staged=window._multiStaged||{};
+  var months=window._multiMonths||[];
+  var wbsId=window._multiWbsId;
+  var applied=0;
+  Object.keys(staged).forEach(function(wid){
+    var action=staged[wid];
+    months.forEach(function(slotIdx){
+      var rYr=ML[slotIdx]?ML[slotIdx].year:YEAR;
+      var rMo=ML[slotIdx]!==undefined?ML[slotIdx].month:slotIdx;
+      /* Remove existing for this worker+month if any */
+      S.assignments=S.assignments.filter(function(a){
+        return !(a.workerId===wid&&a.month===rMo&&a.year===rYr&&a.wbsId===wbsId);
+      });
+      if(action==='add'||action==='add-foreman'){
+        /* Only assign if worker is free this month */
+        var asgn=getAssignmentSlot(wid,slotIdx);
+        if(!asgn){
+          assignWorker(wid,wbsId,slotIdx,action==='add-foreman');
+          applied++;
+        }
+      }
+    });
+  });
+  window._multiStaged={};
+  if(window._asSel&&wbsId) window._asSel[wbsId]={};
+  closeModal();
+  saveS();
+  showToast(applied+' assignments saved','ok');
+  renderAssignmentsPage();
+}
 /* ============================================================
    BACKUP EXPORT / IMPORT
    ============================================================ */
