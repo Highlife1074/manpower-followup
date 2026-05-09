@@ -2483,24 +2483,27 @@ function handleXLSX(file){
 function importWorkers(rows){
   if(!rows||rows.length<2){alert('Empty file or no data');return;}
 
-  /* Scan first 5 rows to find header */
-  var headerIdx=-1, header=[];
-  var keywords=['name','nom','worker','surname','specialty','company','id','prenom'];
+  /* Find header row — first row with recognisable column names */
+  var headerIdx=0;
+  var header=[];
   for(var hi=0;hi<Math.min(5,rows.length);hi++){
-    var row=rows[hi]; if(!row) continue;
-    var joined=row.map(function(v){return (v||'').toString().toLowerCase();}).join('|');
-    var hits=keywords.filter(function(k){return joined.indexOf(k)>=0;}).length;
-    if(hits>=2){
+    var row=rows[hi];
+    if(!row) continue;
+    var joined=(row.map(function(v){return (v||'').toString().toLowerCase();}).join('|'));
+    if(joined.indexOf('name')>=0||joined.indexOf('nom')>=0||joined.indexOf('worker')>=0){
       header=row.map(function(h){return (h||'').toString().trim().toLowerCase();});
-      headerIdx=hi; break;
+      headerIdx=hi;
+      break;
     }
   }
-  if(headerIdx<0){alert('No header row found in first 5 rows.');return;}
+  if(!header.length){alert('No header row found in first 5 rows.');return;}
 
   function col(names){
     for(var ni=0;ni<names.length;ni++){
+      /* exact match */
       var idx=header.indexOf(names[ni]);
       if(idx>=0) return idx;
+      /* partial match */
       for(var j=0;j<header.length;j++){
         if(header[j]&&header[j].indexOf(names[ni])>=0) return j;
       }
@@ -2508,125 +2511,165 @@ function importWorkers(rows){
     return -1;
   }
 
-  /* Detect columns */
-  var ciId=col(['id','worker id','employee id','matricule','staff id','badge','visio']);
-  var ciCo=col(['company','entreprise','employer','societe','contractor']);
+  /* Detect column positions */
+  var ciFirst=col(['first name','firstname','prenom','given name','first','prénom']);
+  var ciLast=col(['last name','lastname','surname','family name','nom de famille','last','family']);
+  var ciName=col(['full name','name','nom','worker name','worker']);
+  /* If we have BOTH a "name" column AND a "first" or "surname" column,
+     treat name as last name and the other as first name */
+  if(ciName>=0&&ciFirst>=0&&ciLast<0){ ciLast=ciName; }
+  if(ciName>=0&&ciLast>=0&&ciFirst<0){ /* name=last, ciLast already set */ }
+  var ciId=col(['id','worker id','employee id','matricule','staff id','badge']);
+  var ciCo=col(['company','entreprise','employer','société','societe','contractor']);
   var ciSpec=col(['specialty','specialite','speciality','trade','metier','skill']);
   var ciStart=col(['contract start','start date','date debut','debut','start']);
   var ciEnd=col(['contract end','end date','date fin','fin contrat','end']);
   var ciRev=col(['revised end','fin revisee','revised','prolongation','new end','extension']);
 
-  /* --- Format detection ---
-     DSS:  header[0]='name' (lastname), header[7]='surname' (firstname) — no ID
-     LOAN: header has 'name' (firstname) AND 'surname' (lastname) as separate cols, + 'id'
-     Generic: first+last or fullname */
-  var hStr=header.join('|');
-  var isDSS=(header[0]==='name' && header.indexOf('surname')===7 && ciId<0);
-  var ciFirst=-1, ciLast=-1, ciName=-1;
-
-  if(isDSS){
-    /* DSS: col A=lastname, col H=firstname */
-    ciLast=0; ciFirst=7;
-  } else {
-    /* Generic detection */
-    var nameIdx=header.indexOf('name'); var surnameIdx=header.indexOf('surname');
-    if(nameIdx>=0 && surnameIdx>=0 && nameIdx!==surnameIdx){
-      /* LOAN-style: NAME=firstname, SURNAME=lastname */
-      ciFirst=nameIdx; ciLast=surnameIdx;
-    } else {
-      ciFirst=col(['first name','firstname','prenom','given name','prénom']);
-      ciLast=col(['last name','lastname','surname','family name','nom de famille']);
-      ciName=col(['full name','name','nom','worker name','worker']);
-      /* If only "name" col and a separate surname col at pos 7 */
-      if(ciName>=0&&ciFirst<0&&ciLast<0){
-        var sr=rows[headerIdx+1];
-        if(sr&&sr[7]&&typeof sr[7]==='string'&&sr[7].trim()&&sr[7].trim()!=='-'){
-          ciLast=ciName; ciFirst=7; ciName=-1;
-        }
-      }
+  /* Special handling for this DSS file:
+     - Col A (0) = Surname, Col H (7) = First name — detect this pattern */
+  var hasSurnameFirstname=false;
+  if(ciName>=0&&ciFirst<0&&ciLast<0){
+    /* Check if there's a non-header column H with names */
+    var sampleRow=rows[headerIdx+1];
+    if(sampleRow&&sampleRow[7]&&typeof sampleRow[7]==='string'&&
+       /^[A-Z\s\-]+$/i.test(sampleRow[7].trim())&&
+       sampleRow[7].trim()!=='-'){
+      /* Col H has names → treat as first name, col A as last name */
+      hasSurnameFirstname=true;
     }
   }
 
-  var hasFL=(ciFirst>=0&&ciLast>=0);
-  if(!hasFL&&ciName<0){alert('Could not find name columns.\nHeaders: '+header.join(', '));return;}
+  var hasFirstLast=(ciFirst>=0&&ciLast>=0)||hasSurnameFirstname;
+  var _ciLast=ciLast>=0?ciLast:(ciName>=0?ciName:0);
+  var _ciFirst=ciFirst>=0?ciFirst:(hasSurnameFirstname?7:-1);
 
-  /* Robust date parser */
+  if(!hasFirstLast&&ciName<0){
+    alert('Could not find Name column.\nHeaders found: '+header.join(', '));
+    return;
+  }
+
+  /* Build specialty map from current S.specs + common aliases */
+  function matchSpec(raw){
+    if(!raw) return '';
+    var up=raw.trim().toUpperCase().replace(/\s+/g,' ');
+    /* Try exact key match */
+    for(var i=0;i<SPECS.length;i++) if(SPECS[i].key.toUpperCase()===up) return SPECS[i].key;
+    /* Try label match (case-insensitive) */
+    for(var i=0;i<SPECS.length;i++) if(SPECS[i].label.toUpperCase()===up) return SPECS[i].key;
+    /* Try S.specs partial match */
+    for(var i=0;i<SPECS.length;i++) if(up.indexOf(SPECS[i].key.toUpperCase())>=0) return SPECS[i].key;
+    for(var i=0;i<SPECS.length;i++) if(up.indexOf(SPECS[i].label.toUpperCase().slice(0,5))>=0) return SPECS[i].key;
+    /* Common aliases — add as many variants as needed */
+    if(up.indexOf('CARP')>=0) return 'CARP';
+    if(up==='CARPENTER') return 'CARP';
+    if(up==='TL'||up==='TEAM LEADER') return '';  /* role, not specialty */
+    if(up.indexOf('STEEL')>=0||up.indexOf('FIXER')>=0||up.indexOf('FITTER')>=0) return 'STEEL';
+    if(up.indexOf('HELP')>=0||up.indexOf('HELPER')>=0) return 'HELP';
+    if(up.indexOf('FINISH')>=0||up.indexOf('FINISHER')>=0) return 'FINISH';
+    if(up.indexOf('DRY')>=0||up.indexOf('DRY WALL')>=0) return 'DRY';
+    if(up.indexOf('ELECT')>=0) return 'HELP'; /* Electrician → map or create new spec */
+    /* Return as-is if no match — import will store empty */
+    return '';
+  }
+
+  /* Robust date parsing: JS Date (from cellDates:true), Excel serial, or text string */
   function robustDate(val){
     if(val===null||val===undefined||val==='') return null;
-    if(val instanceof Date){if(!isNaN(val.getTime())) return val;return null;}
+    /* Already a JS Date (SheetJS cellDates:true) */
+    if(val instanceof Date){
+      if(!isNaN(val.getTime())) return val;
+      return null;
+    }
+    /* Excel serial number */
     if(typeof val==='number'&&val>0){
+      /* Lotus 1900 bug: serials > 60 need -1 */
       var serial=val>60?val-1:val;
       var d=new Date(Math.round((serial-25569)*86400*1000));
+      /* Adjust for timezone offset to get correct local date */
       var tzOff=d.getTimezoneOffset()*60000;
       d=new Date(d.getTime()+tzOff);
       if(!isNaN(d.getTime())&&d.getFullYear()>1900) return d;
     }
+    /* String formats */
     if(typeof val==='string'){
-      var s=val.trim(); if(!s) return null;
+      var s=val.trim();
+      if(!s) return null;
+      /* Try separators: / . - space */
       var sep=s.indexOf('/')>=0?'/':s.indexOf('.')>=0?'.':s.indexOf('-')>=0&&s.length<=10?'-':null;
       if(sep){
         var p=s.split(sep);
         if(p.length===3){
           var d_=parseInt(p[0]),m_=parseInt(p[1]),y_=parseInt(p[2]);
+          /* 2-digit year: 25→2025, 26→2026 etc */
           if(y_<100) y_=y_<50?2000+y_:1900+y_;
-          if(d_<=31&&m_<=12){var d2=new Date(y_,m_-1,d_);if(!isNaN(d2.getTime())&&d2.getFullYear()>1900) return d2;}
-          if(m_<=31&&d_<=12){var d3=new Date(y_,d_-1,m_);if(!isNaN(d3.getTime())&&d3.getFullYear()>1900) return d3;}
+          /* Try DD/MM/YYYY first (day<=31, month<=12) */
+          if(d_<=31&&m_<=12){
+            var d2=new Date(y_,m_-1,d_);
+            if(!isNaN(d2.getTime())&&d2.getFullYear()>1900) return d2;
+          }
+          /* Try MM/DD/YYYY */
+          if(m_<=31&&d_<=12){
+            var d3=new Date(y_,d_-1,m_);
+            if(!isNaN(d3.getTime())&&d3.getFullYear()>1900) return d3;
+          }
         }
       }
+      /* DD-MM-YYYY or YYYY-MM-DD */
+      var p2=s.split('-');
+      if(p2.length===3){
+        if(p2[0].length===4){
+          var d4=new Date(parseInt(p2[0]),parseInt(p2[1])-1,parseInt(p2[2]));
+          if(!isNaN(d4.getTime())) return d4;
+        } else {
+          var d5=new Date(parseInt(p2[2]),parseInt(p2[1])-1,parseInt(p2[0]));
+          if(!isNaN(d5.getTime())&&d5.getFullYear()>1900) return d5;
+        }
+      }
+      /* ISO or other formats */
       var d6=new Date(s);
       if(!isNaN(d6.getTime())&&d6.getFullYear()>1900) return d6;
     }
     return null;
   }
 
-  /* Specialty matcher */
-  function matchSpec(raw){
-    if(!raw) return '';
-    var up=raw.trim().toUpperCase().replace(/\s+/g,' ');
-    for(var i=0;i<SPECS.length;i++) if(SPECS[i].key.toUpperCase()===up||SPECS[i].label.toUpperCase()===up) return SPECS[i].key;
-    for(var i=0;i<SPECS.length;i++) if(up.indexOf(SPECS[i].key.toUpperCase())>=0||up.indexOf(SPECS[i].label.toUpperCase().slice(0,5))>=0) return SPECS[i].key;
-    if(up.indexOf('CARP')>=0) return 'CARP';
-    if(up.indexOf('STEEL')>=0||up.indexOf('FIX')>=0||up.indexOf('FITTER')>=0) return 'STEEL';
-    if(up.indexOf('HELP')>=0) return 'HELP';
-    if(up.indexOf('FINISH')>=0) return 'FINISH';
-    if(up.indexOf('DRY')>=0) return 'DRY';
-    if(up.indexOf('ELECT')>=0) return 'HELP';
-    if(up==='TL'||up==='TEAM LEADER') return '';
-    return '';
-  }
-
   var imported=0,updated=0,skipped=0,noCoMatch=[],changedWorkers=[];
-
   for(var ri=headerIdx+1;ri<rows.length;ri++){
     var row=rows[ri];
     if(!row||!row.length) continue;
-
     /* Build full name */
     var name='';
-    if(hasFL){
-      var fn=(ciFirst>=0?(row[ciFirst]||''):'').toString().trim();
-      var ln=(ciLast>=0?(row[ciLast]||''):'').toString().trim();
-      if(fn==='-') fn=''; if(ln==='-') ln='';
-      name=(fn&&ln)?fn+' '+ln:fn||ln;
-    } else {
+    if(hasSurnameFirstname){
+      /* DSS format: col A=surname, col H=firstname */
+      var surname=(row[_ciLast]||'').toString().trim();
+      var firstname=(row[_ciFirst]||'').toString().trim();
+      if(firstname==='-'||firstname.toLowerCase()===surname.toLowerCase()) firstname='';
+      name=firstname?firstname+' '+surname:surname;
+    } else if(ciFirst>=0&&ciLast>=0){
+      /* Two separate columns — merge Firstname + Lastname */
+      var fn2=(row[ciFirst]||'').toString().trim();
+      var ln2=(row[ciLast]||'').toString().trim();
+      if(fn2==='-') fn2='';
+      if(ln2==='-') ln2='';
+      name=(fn2+' '+ln2).trim();
+    } else if(ciName>=0){
       name=(ciName>=0?(row[ciName]||''):'').toString().trim();
     }
     name=name.trim();
-    if(!name||name.charAt(0)==='='||(!isNaN(+name)&&name.length<5)) {skipped++;continue;}
+    /* Skip empty, formula rows, or numeric-only rows */
+    if(!name||name.charAt(0)==='='||!isNaN(+name)){skipped++;continue;}
+    /* Skip rows where name column is clearly not a person name */
     if(name.length<2){skipped++;continue;}
 
-    /* Worker ID */
-    var workerId='';
-    if(ciId>=0&&row[ciId]!==null&&row[ciId]!==undefined){
-      var rawId=(row[ciId]||'').toString().trim();
-      if(rawId&&rawId!=='-') workerId=rawId;
-    }
-
-    /* Company */
+    var workerId=ciId>=0?(row[ciId]||'').toString().trim():'';
     var coName=ciCo>=0?(row[ciCo]||'').toString().trim():'';
-    var co=null;
-    if(coName){
-      var coLow=coName.toLowerCase();
+    var specRaw=ciSpec>=0?(row[ciSpec]||'').toString():'';
+    var specKey=matchSpec(specRaw);
+
+    /* Fuzzy company match: trim + case-insensitive */
+    var co=getCompanyByName(coName);
+    if(!co&&coName){
+      var coLow=coName.trim().toLowerCase();
       for(var ci2=0;ci2<S.companies.length;ci2++){
         if(S.companies[ci2].name.trim().toLowerCase()===coLow){co=S.companies[ci2];break;}
       }
@@ -2634,19 +2677,11 @@ function importWorkers(rows){
     var companyId=co?co.id:'';
     if(!co&&coName&&noCoMatch.indexOf(coName)<0) noCoMatch.push(coName);
 
-    /* Specialty */
-    var specRaw=ciSpec>=0?(row[ciSpec]||'').toString():'';
-    var specKey=matchSpec(specRaw);
+    var dateStart=robustDate(ciStart>=0?row[ciStart]:null);
+    var dateEnd=robustDate(ciEnd>=0?row[ciEnd]:null);
+    var dateRev=robustDate(ciRev>=0?row[ciRev]:null);
 
-    /* Auto PU */
-    var pu2=companyId&&specKey?getPU(companyId,specKey)||0:0;
-
-    /* Dates */
-    var dateStart=ciStart>=0?robustDate(row[ciStart]):null;
-    var dateEnd=ciEnd>=0?robustDate(row[ciEnd]):null;
-    var dateRev=ciRev>=0?robustDate(row[ciRev]):null;
-
-    /* Match existing */
+    /* Match existing by workerId first, then by exact name */
     var existing=null;
     if(workerId){for(var wi=0;wi<S.workers.length;wi++) if(S.workers[wi].workerId===workerId){existing=S.workers[wi];break;}}
     if(!existing){
@@ -2654,30 +2689,1068 @@ function importWorkers(rows){
       for(var wi=0;wi<S.workers.length;wi++) if(S.workers[wi].name.toLowerCase()===nameLow){existing=S.workers[wi];break;}
     }
 
-    var wk={id:existing?existing.id:uid(),workerId:workerId,name:name,companyId:companyId,spec:specKey,
+    var wk={
+      id:existing?existing.id:uid(),
+      workerId:workerId,
+      name:name,
+      companyId:companyId,
+      spec:specKey,
       dateDebut:dateStart?dateStart.toISOString():null,
       dateFinContrat:dateEnd?dateEnd.toISOString():null,
-      dateFinRevisee:dateRev?dateRev.toISOString():null};
+      dateFinRevisee:dateRev?dateRev.toISOString():null
+    };
 
     if(existing){
+      /* Check if anything changed */
       var changed=[];
       if(existing.spec!==specKey&&specKey) changed.push('specialty: '+specLabel(existing.spec)+' → '+specLabel(specKey));
       var newCo=getCompany(companyId); var oldCo=getCompany(existing.companyId);
       if((newCo?newCo.name:'')!==(oldCo?oldCo.name:'')&&companyId) changed.push('company: '+(oldCo?oldCo.name:'?')+' → '+(newCo?newCo.name:'?'));
-      if(dateEnd&&existing.dateFinContrat&&dateEnd.toISOString().slice(0,10)!==existing.dateFinContrat.slice(0,10)) changed.push('end date');
-      if(changed.length>0){changedWorkers.push({existing:existing,newWk:wk,changes:changed});}
-      else{S.workers[S.workers.indexOf(existing)]=wk;updated++;}
+      if(dateEnd&&existing.dateFinContrat){
+        var newEnd=dateEnd.toISOString().slice(0,10);
+        var oldEnd=existing.dateFinContrat.slice(0,10);
+        if(newEnd!==oldEnd) changed.push('contract end: '+oldEnd+' → '+newEnd);
+      } else if(dateEnd&&!existing.dateFinContrat){
+        changed.push('contract end: (none) → '+dateEnd.toISOString().slice(0,10));
+      }
+      if(changed.length>0){
+        changedWorkers.push({existing:existing,newWk:wk,changes:changed});
+      } else {
+        /* No change — update dates silently */
+        S.workers[S.workers.indexOf(existing)]=wk;
+        updated++;
+      }
     } else {
-      S.workers.push(wk); imported++;
+      S.workers.push(wk);
+      imported++;
     }
   }
 
-  if(changedWorkers.length>0){showImportConflictDialog(changedWorkers,imported,updated,skipped,noCoMatch);return;}
+  /* Show overwrite dialog if there are changed workers */
+  if(changedWorkers.length>0){
+    showImportConflictDialog(changedWorkers,imported,updated,skipped,noCoMatch);
+    return;
+  }
+
   saveS();render();
-  var msg='Import: '+imported+' new, '+updated+' updated'+(skipped?' ('+skipped+' skipped)':'');
-  if(noCoMatch.length) msg+='\nUnmatched companies: '+noCoMatch.slice(0,8).join(', ');
+  var msg='Import done: '+imported+' new, '+updated+' updated';
+  if(skipped) msg+=' ('+skipped+' blank rows skipped)';
+  if(noCoMatch.length) msg+='\n\nUnmatched companies:\n'+noCoMatch.slice(0,10).join(', ')+(noCoMatch.length>10?'...':'');
   showToast(msg,'ok');
 }
+
+/* ============================================================
+   WORKERS PAGE
+   ============================================================ */
+function renderWorkersPage(){
+  /* Recap */
+  var total=S.workers.length;
+  var active=0,gap=0,exp2=0;
+  for(var i=0;i<S.workers.length;i++){
+    var st=workerGlobalStatus(S.workers[i]);
+    if(st==='ok') active++;
+    else if(st==='gap') gap++;
+    else if(st==='exp') exp2++;
+  }
+  document.getElementById('recapBar').innerHTML=
+    rcCard('&#128101;','var(--tl)','Total Workers','color:var(--tea)',total,'Imported')+
+    rcCard('&#9989;','var(--gl)','Covered','color:var(--green)',active,'All months OK')+
+    rcCard('&#9888;','var(--ol)','Gap Alert','color:var(--ora)',gap,'Unassigned period')+
+    rcCard('&#128308;','var(--rl)','Expired','color:var(--red)',exp2,'Contract over');
+
+  var html='';
+  /* Upload zone */
+  html+='<div class="upload-zone" id="uploadZone" onclick="triggerXLSX()" ';
+  html+='ondragover="event.preventDefault();this.classList.add(\'drag\')" ';
+  html+='ondragleave="this.classList.remove(\'drag\')" ';
+  html+='ondrop="this.classList.remove(\'drag\');event.preventDefault();handleXLSX(event.dataTransfer.files[0])">';
+  html+='<div style="font-size:28px">&#128196;</div>';
+  html+='<div style="font-weight:600;font-size:13px;color:var(--tx2);margin-top:6px">Import Workers Excel</div>';
+  html+='<p>Click or drag & drop your .xlsx file<br>Columns: Name, Company, Specialty, Contract Start, Contract End, Revised End</p>';
+  html+='<input type="file" id="xlsxInput" accept=".xlsx,.xls" style="display:none" onchange="handleXLSX(this.files[0])">';
+  html+='</div>';
+
+  html+='<div style="padding:0 16px 8px;display:flex;justify-content:flex-end">';
+  html+='<button class="btn pri" onclick="openWorkerModal()">+ Add Worker</button>';
+  html+='</div>';
+
+  if(S.workers.length===0){
+    document.getElementById('pageContent').innerHTML=html;
+    return;
+  }
+
+  /* Selection toolbar (hidden until items selected) */
+  html+='<div class="wk-sel-bar" id="wkSelBar" style="display:none">';
+  html+='<span class="scount" id="wkSelCount">0</span> selected';
+  html+='<button class="btn" onclick="wkSelectAll()">Select all</button>';
+  html+='<button class="btn" onclick="wkSelectNone()">Clear</button>';
+  html+='<button class="btn" onclick="wkSelectBySpec()">Same specialty</button>';
+  html+='<button class="btn" onclick="wkSelectExpired()">Expired contracts</button>';
+  html+='<button class="btn danger" onclick="wkDeleteSelected()">&#128465; Delete selected</button>';
+  html+='</div>';
+
+  /* Workers table */
+  html+='<div class="tw" style="overflow:auto;flex:1;min-height:0">';
+  html+='<table class="wk-table" id="wkTable">';
+  html+='<thead><tr>';
+  html+='<th style="width:32px;text-align:center"><input class="wk-cb" type="checkbox" id="wkCbAll" onchange="wkToggleAll(this)" title="Select all"></th>';
+  html+='<th>ID</th><th>Name</th><th>Company</th><th>Specialty</th><th>Role</th>';
+  html+='<th>Contract Start</th><th>Contract End</th><th>Revised End</th>';
+  html+='<th>Status</th>';
+  for(var m=0;m<NM;m++) html+='<th style="min-width:28px;text-align:center;font-size:9px">'+(ML[m]?ML[m].short:MS[m])+'</th>';
+  html+='<th></th>';
+  html+='</tr></thead><tbody>';
+
+  for(var wi=0;wi<S.workers.length;wi++){
+    var wk=S.workers[wi];
+    var co=getCompany(wk.companyId);
+    var coName=co?co.name:'?';
+    var sl=specLabel(wk.spec);
+    var gst=workerGlobalStatus(wk);
+    var stBadge='';
+    if(gst==='ok') stBadge='<span class="sb sb-ok">&#9989; Covered</span>';
+    else if(gst==='gap') stBadge='<span class="sb sb-gap">&#9888; Gap</span>';
+    else if(gst==='exp') stBadge='<span class="sb sb-exp">&#128308; Expired</span>';
+    else stBadge='<span class="sb sb-free">Available</span>';
+
+    html+='<tr data-wid="'+wk.id+'">';
+    html+='<td style="text-align:center"><input class="wk-cb" type="checkbox" data-wid="'+wk.id+'" onchange="wkCbChange(this)"></td>';
+    html+='<td style="font-family:var(--mono);font-size:10px;color:var(--tx3)">'+(wk.workerId||'—')+'</td>';
+    html+='<td style="font-weight:600">'+wk.name+'</td>';
+    html+='<td>'+coName+'</td>';
+    html+='<td>'+(sl?'<span class="spsel sk-'+wk.spec+'" style="cursor:default;font-size:10px">'+sl+'</span>':'')+'</td>';
+    /* Foreman/supervisor roles */
+    var roleH='';
+    for(var ri=0;ri<NM;ri++){
+      var fa=getForeman(null,ri);
+      /* check all WBS */
+      for(var rwi=0;rwi<S.wbs.length;rwi++){
+        var rfa=getForeman(S.wbs[rwi].id,ri);
+        if(rfa&&rfa.workerId===wk.id){roleH+='<span class="fm-badge">&#9733; '+MS[ri]+'</span> ';}
+      }
+      /* supervisor */
+    }
+    var isSv=false;
+    for(var rw=0;rw<S.wbs.length;rw++){if(S.wbs[rw].supervisorId===wk.id){isSv=true;break;}}
+    if(isSv) roleH='<span class="sb sb-warn" style="font-size:9px">&#128100; Supervisor</span> '+roleH;
+    html+='<td style="max-width:140px;white-space:normal">'+roleH+'</td>';
+    html+='<td style="font-family:var(--mono);font-size:11px">'+fmtDate(wk.dateDebut?new Date(wk.dateDebut):null)+'</td>';
+    html+='<td style="font-family:var(--mono);font-size:11px">'+fmtDate(wk.dateFinContrat?new Date(wk.dateFinContrat):null)+'</td>';
+    html+='<td style="font-family:var(--mono);font-size:11px">'+(wk.dateFinRevisee?'<strong>'+fmtDate(new Date(wk.dateFinRevisee))+'</strong>':'<span style="color:var(--tx3)">—</span>')+'</td>';
+    html+='<td>'+stBadge+'</td>';
+    /* Month dots */
+    for(var m=0;m<NM;m++){
+      var slotYr=ML[m]?ML[m].year:YEAR;
+      var slotMo=ML[m]?ML[m].month:m;
+      var mst=workerMonthStatus(wk,slotMo,slotYr);
+      var dotCls=mst==='ok'?'ms-ok':mst==='gap'?'ms-gap':mst==='free'?'ms-free':mst==='out'?'ms-out':'ms-exp';
+      var a=getAssignmentSlot(wk.id,m);
+      var tip=mst==='ok'?'Assigned: '+(a?getWBSName(a.wbsId):'?'):mst==='gap'?'Unassigned (contract active)':mst==='free'?'Available':mst==='out'?'Outside contract':'Expired';
+      html+='<td style="text-align:center"><span class="ms-dot '+dotCls+'" title="'+MS[m]+': '+tip+'"></span></td>';
+    }
+    html+='<td style="display:flex;gap:4px"><button class="bic" onclick="openWorkerModal(\''+wk.id+'\')" title="Edit">e</button><button class="bic del" onclick="deleteWorker(\'' +wk.id+ '\')" title="Remove">x</button></td>';
+    html+='</tr>';
+  }
+  html+='</tbody></table></div>';
+  document.getElementById('pageContent').innerHTML=html;
+}
+
+function renderCoverageSummary(){
+  var html='<div style="flex:1;overflow-y:auto;padding:12px 16px">';
+  html+='<div class="bot-title">Coverage Summary</div>';
+  html+='<table class="bot-table" style="width:100%">';
+  html+='<thead><tr><th>Category</th><th>Total Need (workers)</th><th>Assigned</th><th>Gap</th>';
+  for(var si=0;si<SPECS.length-1;si++) html+='<th>'+SPECS[si].label+' Need / Assigned</th>';
+  html+='</tr></thead><tbody>';
+
+  /* Overall */
+  var totNeed=0,totAss=0;
+  var specNeed={},specAss={};
+  for(var si=0;si<SPECS.length-1;si++){specNeed[SPECS[si].key]=0;specAss[SPECS[si].key]=0;}
+  for(var wi2=0;wi2<S.wbs.length;wi2++){
+    var wbs2=S.wbs[wi2];
+    for(var m2=0;m2<NM;m2++){
+      var bh=bud(wbs2,m2);
+      if(bh<=0) continue;
+      var need=Math.ceil(bh);
+      totNeed+=need;
+      totAss+=getWBSWorkers(wbs2.id,m2).length;
+      /* by specialty */
+      var sp2=wbs2.spec;
+      if(specNeed[sp2]!==undefined) specNeed[sp2]+=need;
+      if(specAss[sp2]!==undefined) specAss[sp2]+=getWBSWorkers(wbs2.id,m2).length;
+    }
+  }
+  var totGap=totAss-totNeed;
+  var totGapCls=totGap<0?'color:var(--red)':totGap>0?'color:var(--ora)':'color:var(--green)';
+  html+='<tr style="font-weight:700;background:var(--bg2)">';
+  html+='<td>All WBS (all months)</td>';
+  html+='<td>'+totNeed+'</td><td>'+totAss+'</td>';
+  html+='<td style="'+totGapCls+'">'+(totGap>0?'+':'')+totGap+'</td>';
+  for(var si=0;si<SPECS.length-1;si++){
+    var sk=SPECS[si].key;
+    var sg=specAss[sk]-specNeed[sk];
+    var sgcls=sg<0?'color:var(--red)':sg>0?'color:var(--ora)':'color:var(--green)';
+    html+='<td>'+specNeed[sk]+' / '+specAss[sk]+'<br><span style="font-size:10px;'+sgcls+'">'+(sg>0?'+':'')+sg+'</span></td>';
+  }
+  html+='</tr>';
+
+  /* Per month breakdown */
+  for(var m3=0;m3<NM;m3++){
+    var mNeed=0,mAss=0; var mSpecN={},mSpecA={};
+    for(var si=0;si<SPECS.length-1;si++){mSpecN[SPECS[si].key]=0;mSpecA[SPECS[si].key]=0;}
+    for(var wi3=0;wi3<S.wbs.length;wi3++){
+      var bh3=bud(S.wbs[wi3],m3);
+      if(bh3<=0) continue;
+      var need3=Math.ceil(bh3);
+      mNeed+=need3;
+      mAss+=getWBSWorkers(S.wbs[wi3].id,m3).length;
+      var sp3=S.wbs[wi3].spec;
+      if(mSpecN[sp3]!==undefined) mSpecN[sp3]+=need3;
+      if(mSpecA[sp3]!==undefined) mSpecA[sp3]+=getWBSWorkers(S.wbs[wi3].id,m3).length;
+    }
+    if(mNeed===0&&mAss===0) continue;
+    var mGap=mAss-mNeed;
+    var mGapCls=mGap<0?'color:var(--red)':mGap>0?'color:var(--ora)':'color:var(--green)';
+    html+='<tr>';
+    html+='<td>'+MS[m3]+'</td><td>'+mNeed+'</td><td>'+mAss+'</td>';
+    html+='<td style="'+mGapCls+'">'+(mGap>0?'+':'')+mGap+'</td>';
+    for(var si=0;si<SPECS.length-1;si++){
+      var sk2=SPECS[si].key;
+      var sg2=mSpecA[sk2]-mSpecN[sk2];
+      var sg2cls=sg2<0?'color:var(--red)':sg2>0?'color:var(--ora)':'color:var(--green)';
+      html+='<td>'+mSpecN[sk2]+' / '+mSpecA[sk2]+'<br><span style="font-size:10px;'+sg2cls+'">'+(sg2>0?'+':'')+sg2+'</span></td>';
+    }
+    html+='</tr>';
+  }
+  html+='</tbody></table></div>';
+
+  document.getElementById('pageContent').innerHTML=html;
+}
+
+function getWBSName(id){
+  for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===id) return S.wbs[i].code||S.wbs[i].name;
+  return '?';
+}
+
+function deleteWorker(id){
+  if(!confirm('Remove this worker and all their assignments?')) return;
+  S.workers=S.workers.filter(function(w){return w.id!==id;});
+  S.assignments=S.assignments.filter(function(a){return a.workerId!==id;});
+  render();
+}
+
+
+/* ---- Multi-month assignment selection ---- */
+window._asSel={};  /* {wbsId: {month: bool}} */
+
+function asToggleMon(wbsId,m,checked){
+  if(!window._asSel) window._asSel={};
+  if(!window._asSel[wbsId]) window._asSel[wbsId]={};
+  window._asSel[wbsId][m]=checked;
+  /* Re-render assignments without closing picker */
+  renderAssignmentsPage();
+}
+
+function asClearSel(wbsId){
+  if(window._asSel) window._asSel[wbsId]={};
+  renderAssignmentsPage();
+}
+
+function asOpenPicker(wbsId){
+  var sel=window._asSel&&window._asSel[wbsId]?window._asSel[wbsId]:{};
+  var months=Object.keys(sel).filter(function(k){return sel[k];}).map(Number);
+  if(!months.length) return;
+  /* Open multi-month version of picker */
+  openWorkerPickerMulti(wbsId,months);
+}
+
+/* ---- Multi-select worker management ---- */
+var WK_SEL={}; /* {workerId: true} */
+
+function wkCbChange(cb){
+  var wid=cb.dataset.wid;
+  if(cb.checked) WK_SEL[wid]=true;
+  else delete WK_SEL[wid];
+  /* Highlight row */
+  var tr=cb.closest('tr');
+  if(tr) tr.classList.toggle('wk-selected',cb.checked);
+  wkUpdateBar();
+}
+
+function wkToggleAll(masterCb){
+  var cbs=document.querySelectorAll('.wk-table tbody input.wk-cb');
+  WK_SEL={};
+  cbs.forEach(function(cb){
+    cb.checked=masterCb.checked;
+    var tr=cb.closest('tr');
+    if(masterCb.checked){WK_SEL[cb.dataset.wid]=true;if(tr)tr.classList.add('wk-selected');}
+    else{if(tr)tr.classList.remove('wk-selected');}
+  });
+  wkUpdateBar();
+}
+
+function wkSelectAll(){
+  var cbs=document.querySelectorAll('.wk-table tbody input.wk-cb');
+  WK_SEL={};
+  cbs.forEach(function(cb){
+    cb.checked=true;
+    WK_SEL[cb.dataset.wid]=true;
+    var tr=cb.closest('tr');if(tr)tr.classList.add('wk-selected');
+  });
+  var all=document.getElementById('wkCbAll');if(all)all.checked=true;
+  wkUpdateBar();
+}
+
+function wkSelectNone(){
+  var cbs=document.querySelectorAll('.wk-table tbody input.wk-cb');
+  WK_SEL={};
+  cbs.forEach(function(cb){
+    cb.checked=false;
+    var tr=cb.closest('tr');if(tr)tr.classList.remove('wk-selected');
+  });
+  var all=document.getElementById('wkCbAll');if(all)all.checked=false;
+  wkUpdateBar();
+}
+
+function wkSelectBySpec(){
+  /* Select all workers with same specialty as any currently selected worker */
+  var specs={};
+  Object.keys(WK_SEL).forEach(function(wid){
+    var wk=getWorker(wid);if(wk)specs[wk.spec]=true;
+  });
+  if(!Object.keys(specs).length){showToast('Select at least one worker first','warn');return;}
+  WK_SEL={};
+  var cbs=document.querySelectorAll('.wk-table tbody input.wk-cb');
+  cbs.forEach(function(cb){
+    var wk=getWorker(cb.dataset.wid);
+    var match=wk&&specs[wk.spec];
+    cb.checked=!!match;
+    var tr=cb.closest('tr');
+    if(match){WK_SEL[cb.dataset.wid]=true;if(tr)tr.classList.add('wk-selected');}
+    else{if(tr)tr.classList.remove('wk-selected');}
+  });
+  wkUpdateBar();
+}
+
+function wkSelectExpired(){
+  WK_SEL={};
+  var cbs=document.querySelectorAll('.wk-table tbody input.wk-cb');
+  cbs.forEach(function(cb){
+    var wk=getWorker(cb.dataset.wid);
+    var exp=wk&&workerGlobalStatus(wk)==='exp';
+    cb.checked=!!exp;
+    var tr=cb.closest('tr');
+    if(exp){WK_SEL[cb.dataset.wid]=true;if(tr)tr.classList.add('wk-selected');}
+    else{if(tr)tr.classList.remove('wk-selected');}
+  });
+  wkUpdateBar();
+}
+
+function wkUpdateBar(){
+  var n=Object.keys(WK_SEL).length;
+  var bar=document.getElementById('wkSelBar');
+  var cnt=document.getElementById('wkSelCount');
+  if(bar) bar.style.display=n>0?'flex':'none';
+  if(cnt) cnt.textContent=n;
+  /* Update master checkbox state */
+  var all=document.getElementById('wkCbAll');
+  if(all){
+    var total=document.querySelectorAll('.wk-table tbody input.wk-cb').length;
+    all.indeterminate=(n>0&&n<total);
+    all.checked=(n>0&&n===total);
+  }
+}
+
+function wkDeleteSelected(){
+  var ids=Object.keys(WK_SEL);
+  if(!ids.length) return;
+  if(!confirm('Delete '+ids.length+' worker'+(ids.length>1?'s':'')+' and all their assignments?')) return;
+  var idSet={};ids.forEach(function(id){idSet[id]=true;});
+  S.workers=S.workers.filter(function(w){return !idSet[w.id];});
+  S.assignments=S.assignments.filter(function(a){return !idSet[a.workerId];});
+  WK_SEL={};
+  saveS();
+  showToast('Deleted '+ids.length+' worker'+(ids.length>1?'s':''),'ok');
+  render();
+}
+
+/* ============================================================
+   ASSIGNMENTS PAGE
+   ============================================================ */
+function renderAssignmentsPage(){
+  /* Recap: coverage alerts */
+  var totalCells=0,covered=0,uncovered=0,partial=0;
+  for(var wi=0;wi<S.wbs.length;wi++){
+    for(var m=0;m<NM;m++){
+      var budHM=bud(S.wbs[wi],m);
+      if(budHM<=0) continue;
+      totalCells++;
+      var assigned=getWBSWorkers(S.wbs[wi].id,m).length;
+      if(assigned===0) uncovered++;
+      else if(assigned<Math.ceil(budHM)) partial++;
+      else covered++;
+    }
+  }
+  document.getElementById('recapBar').innerHTML=
+    rcCard('&#128203;','var(--bl)','WBS x Months','color:var(--blue)',totalCells,'With budget > 0')+
+    rcCard('&#9989;','var(--gl)','Fully covered','color:var(--green)',covered,'Workers >= Budget')+
+    rcCard('&#9888;','var(--ol)','Partial','color:var(--ora)',partial,'Workers < Budget')+
+    rcCard('&#128308;','var(--rl)','Uncovered','color:var(--red)',uncovered,'No worker assigned');
+
+  /* Sub-tab: Assign or Overview */
+  if(!window._asTab) window._asTab='assign';
+  var html='<div style="display:flex;gap:6px;padding:6px 16px;border-bottom:1px solid var(--border2);background:var(--bg2);flex-shrink:0;align-items:center">';
+  html+='<button class="btn'+(window._asTab==='assign'?' pri':'')+' " onclick="setAsTab(\'assign\')">&#128203; Assignments</button>';
+  html+='<button class="btn'+(window._asTab==='overview'?' pri':'')+' " onclick="setAsTab(\'overview\')">&#128200; Coverage Overview</button>';
+  html+='</div>';
+
+  if(window._asTab==='overview'){
+    /* Coverage summary table in its own space */
+    document.getElementById('pageContent').innerHTML=html+renderCoverageSummary();
+    return;
+  }
+
+  /* Assignment grid */
+  html+='<div class="as-grid" style="flex:1;overflow:auto;min-height:0"><table class="as-table"><thead><tr>';
+  html+='<th class="ap1">WBS</th>';
+  html+='<th class="ap2">Budget</th>';
+  for(var m=0;m<NM;m++){
+    var ml=ML[m]?ML[m].short:MS[m];
+    html+='<th style="min-width:120px;text-align:center">'+ml+'</th>';
+  }
+  html+='</tr></thead><tbody>';
+
+  for(var gi=0;gi<S.groups.length;gi++){
+    var g=S.groups[gi];
+    /* Group header row */
+    html+='<tr style="background:var(--bg2)">';
+    html+='<td class="ap1" colspan="'+(2+NM)+'" style="font-weight:800;font-size:12px;color:var(--tx);padding:6px 8px;border-bottom:2px solid var(--border3)">'+g.name+'</td>';
+    html+='</tr>';
+
+    var groupWBS=[];
+    var dw=filterW(g.id);
+    for(var i=0;i<dw.length;i++) groupWBS.push(dw[i]);
+    for(var si=0;si<g.sub.length;si++){
+      var sgW=filterW(g.sub[si].id);
+      for(var i=0;i<sgW.length;i++) groupWBS.push(sgW[i]);
+    }
+
+    for(var wi=0;wi<groupWBS.length;wi++){
+      var wbs=groupWBS[wi];
+      var bt=addBudget(wbs);
+      html+='<tr>';
+      html+='<td class="ap1"><span class="codb">'+wbs.code+'</span> '+wbs.name+'</td>';
+      html+='<td class="ap2 num" style="color:var(--blue)">'+bt.toFixed(1)+'</td>';
+      /* Multi-month selection state per WBS */
+      var wbsSel=window._asSel&&window._asSel[wbs.id]?window._asSel[wbs.id]:{};
+      var selMonths=Object.keys(wbsSel).filter(function(k){return wbsSel[k];}).map(Number);
+      for(var m=0;m<NM;m++){
+        var budHM=bud(wbs,m);
+        var workers=getWBSWorkers(wbs.id,m);
+        var nW=workers.length;
+        var isSel=wbsSel[m]||false;
+        var cellCls='as-cell'+(isSel?' as-cell-sel':'');
+        if(budHM>0){
+          if(nW===0) cellCls+=' as-alert-red';
+          else if(nW<Math.ceil(budHM)) cellCls+=' as-alert-ora';
+          else cellCls+=' as-alert-ok';
+        }
+        html+='<td style="position:relative"><div class="'+cellCls+'">';
+        /* Checkbox for multi-select */
+        html+='<input type="checkbox" class="as-month-cb" '+(isSel?'checked':'')+' onchange="asToggleMon(\''+wbs.id+'\','+m+',this.checked)">';
+        if(budHM>0) html+='<div class="as-bud">Bud: '+budHM.toFixed(1)+' / '+Math.ceil(budHM)+'w</div>';
+        html+='<div class="as-names">';
+        for(var k=0;k<workers.length;k++){
+          var wk2=workers[k];
+          var isExp=!workerActiveInMonth(wk2,ML[m]?ML[m].month:m,ML[m]?ML[m].year:YEAR);
+          var fmA=getForeman(wbs.id,m);
+          var isFmWk=(fmA&&fmA.workerId===wk2.id);
+          html+='<span class="as-chip'+(isExp?' exp':'')+(isFmWk?' fm':'')+'" data-wid="'+wk2.id+'" data-wbs="'+wbs.id+'" data-m="'+m+'" onclick="showChipPop(event,this)">'+wk2.name.split(' ')[0]+(isExp?' !':'')+'</span>';
+        }
+        html+='</div>';
+        html+='<span class="as-add" data-wbs="'+wbs.id+'" data-m="'+m+'" onclick="openWP(this)">+ assign</span>';
+        html+='</div></td>';
+      }
+      html+='</tr>';
+      /* Selection toolbar — separate row, never breaks column alignment */
+      if(selMonths.length>0){
+        html+='<tr style="background:#fff3e0">';
+        html+='<td class="ap1" style="padding:4px 10px;font-size:11px;font-weight:700;color:var(--ora)">';
+        html+=selMonths.length+' month'+(selMonths.length>1?'s':'')+' selected</td>';
+        html+='<td style="padding:3px 6px"></td>';
+        html+='<td colspan="'+NM+'" style="padding:3px 8px">';
+        html+='<div style="display:flex;gap:6px;align-items:center">';
+        html+='<button class="btn" style="padding:3px 8px;font-size:10px" onclick="asClearSel(\''+wbs.id+'\')" >✕ Clear</button>';
+        html+='<button class="btn" style="padding:3px 10px;font-size:10px;background:var(--green);border-color:var(--gm);color:#fff" onclick="asOpenPicker(\''+wbs.id+'\')" >&#128101; Assign '+selMonths.length+' month'+(selMonths.length>1?'s':'')+'</button>';
+        html+='</div></td>';
+        html+='</tr>';
+      }
+    }
+  }
+  html+='</tbody></table></div>';
+  document.getElementById('pageContent').innerHTML=html;
+}
+
+function renderCoverageSummary(){
+  var html='<div style="flex:1;overflow-y:auto;padding:12px 16px">';
+  html+='<div class="bot-title">Coverage Summary</div>';
+  html+='<table class="bot-table" style="width:100%">';
+  html+='<thead><tr><th>Category</th><th>Total Need (workers)</th><th>Assigned</th><th>Gap</th>';
+  for(var si=0;si<SPECS.length-1;si++) html+='<th>'+SPECS[si].label+' Need / Assigned</th>';
+  html+='</tr></thead><tbody>';
+
+  /* Overall */
+  var totNeed=0,totAss=0;
+  var specNeed={},specAss={};
+  for(var si=0;si<SPECS.length-1;si++){specNeed[SPECS[si].key]=0;specAss[SPECS[si].key]=0;}
+  for(var wi2=0;wi2<S.wbs.length;wi2++){
+    var wbs2=S.wbs[wi2];
+    for(var m2=0;m2<NM;m2++){
+      var bh=bud(wbs2,m2);
+      if(bh<=0) continue;
+      var need=Math.ceil(bh);
+      totNeed+=need;
+      totAss+=getWBSWorkers(wbs2.id,m2).length;
+      /* by specialty */
+      var sp2=wbs2.spec;
+      if(specNeed[sp2]!==undefined) specNeed[sp2]+=need;
+      if(specAss[sp2]!==undefined) specAss[sp2]+=getWBSWorkers(wbs2.id,m2).length;
+    }
+  }
+  var totGap=totAss-totNeed;
+  var totGapCls=totGap<0?'color:var(--red)':totGap>0?'color:var(--ora)':'color:var(--green)';
+  html+='<tr style="font-weight:700;background:var(--bg2)">';
+  html+='<td>All WBS (all months)</td>';
+  html+='<td>'+totNeed+'</td><td>'+totAss+'</td>';
+  html+='<td style="'+totGapCls+'">'+(totGap>0?'+':'')+totGap+'</td>';
+  for(var si=0;si<SPECS.length-1;si++){
+    var sk=SPECS[si].key;
+    var sg=specAss[sk]-specNeed[sk];
+    var sgcls=sg<0?'color:var(--red)':sg>0?'color:var(--ora)':'color:var(--green)';
+    html+='<td>'+specNeed[sk]+' / '+specAss[sk]+'<br><span style="font-size:10px;'+sgcls+'">'+(sg>0?'+':'')+sg+'</span></td>';
+  }
+  html+='</tr>';
+
+  /* Per month breakdown */
+  for(var m3=0;m3<NM;m3++){
+    var mNeed=0,mAss=0; var mSpecN={},mSpecA={};
+    for(var si=0;si<SPECS.length-1;si++){mSpecN[SPECS[si].key]=0;mSpecA[SPECS[si].key]=0;}
+    for(var wi3=0;wi3<S.wbs.length;wi3++){
+      var bh3=bud(S.wbs[wi3],m3);
+      if(bh3<=0) continue;
+      var need3=Math.ceil(bh3);
+      mNeed+=need3;
+      mAss+=getWBSWorkers(S.wbs[wi3].id,m3).length;
+      var sp3=S.wbs[wi3].spec;
+      if(mSpecN[sp3]!==undefined) mSpecN[sp3]+=need3;
+      if(mSpecA[sp3]!==undefined) mSpecA[sp3]+=getWBSWorkers(S.wbs[wi3].id,m3).length;
+    }
+    if(mNeed===0&&mAss===0) continue;
+    var mGap=mAss-mNeed;
+    var mGapCls=mGap<0?'color:var(--red)':mGap>0?'color:var(--ora)':'color:var(--green)';
+    html+='<tr>';
+    html+='<td>'+MS[m3]+'</td><td>'+mNeed+'</td><td>'+mAss+'</td>';
+    html+='<td style="'+mGapCls+'">'+(mGap>0?'+':'')+mGap+'</td>';
+    for(var si=0;si<SPECS.length-1;si++){
+      var sk2=SPECS[si].key;
+      var sg2=mSpecA[sk2]-mSpecN[sk2];
+      var sg2cls=sg2<0?'color:var(--red)':sg2>0?'color:var(--ora)':'color:var(--green)';
+      html+='<td>'+mSpecN[sk2]+' / '+mSpecA[sk2]+'<br><span style="font-size:10px;'+sg2cls+'">'+(sg2>0?'+':'')+sg2+'</span></td>';
+    }
+    html+='</tr>';
+  }
+  html+='</tbody></table></div>';
+
+  document.getElementById('pageContent').innerHTML=html;
+}
+
+function setAsTab(tab){
+  window._asTab=tab;
+  renderAssignmentsPage();
+}
+
+/* ============================================================
+   WORKER PICKER MODAL
+   ============================================================ */
+var pickerOpen=null;
+var _botCollapsed={inv:false,bot:false};
+function openWP(el){openWorkerPicker(el,el.dataset.wbs,parseInt(el.dataset.m));}
+
+function openWorkerPicker(btn,wbsId,month){
+  pickerOpen={wbsId:wbsId,month:month};
+  /* Staged changes: {workerId: 'add'|'remove'|'add-foreman'} */
+  var staged={};
+
+  function buildModal(filterText){
+    var slotYr=ML[month]?ML[month].year:YEAR;
+    var slotMo=ML[month]!==undefined?ML[month].month:month;
+    var slotLabel=ML[month]?ML[month].label:MS[month];
+    var ft=(filterText||'').toLowerCase();
+
+    /* WBS name */
+    var wbsName=''; var wbsBudMM=0;
+    for(var i=0;i<S.wbs.length;i++) if(S.wbs[i].id===wbsId){wbsName=S.wbs[i].name;wbsBudMM=wbsBudAtSlot(S.wbs[i],month);break;}
+
+    /* Currently saved assignments */
+    var savedHere=getWBSWorkers(wbsId,month).map(function(w){return w.id;});
+    /* Effective after staged changes */
+    function effectivelyAssignedHere(wid){
+      if(staged[wid]==='remove') return false;
+      if(staged[wid]==='add'||staged[wid]==='add-foreman') return true;
+      return savedHere.indexOf(wid)>=0;
+    }
+    function effectivelyFree(wid){
+      if(staged[wid]==='add'||staged[wid]==='add-foreman') return false;
+      if(staged[wid]==='remove') return true;
+      var a=getAssignmentSlot(wid,month);
+      return !a;
+    }
+
+    /* Count effective assignments */
+    var effectiveCount=0;
+    var effectiveForemanId='';
+    for(var i=0;i<S.workers.length;i++){
+      if(effectivelyAssignedHere(S.workers[i].id)){
+        effectiveCount++;
+        /* check foreman */
+        if(staged[S.workers[i].id]==='add-foreman') effectiveForemanId=S.workers[i].id;
+        else{var fm2=getForeman(wbsId,month);if(fm2&&fm2.workerId===S.workers[i].id&&staged[S.workers[i].id]!=='remove')effectiveForemanId=S.workers[i].id;}
+      }
+    }
+
+    var stagedCount=Object.keys(staged).length;
+    var box=document.getElementById('mbox');
+
+    var h='<div class="wk-pick-modal">';
+
+    /* Header */
+    h+='<div class="wk-pick-header">';
+    h+='<h3>&#128101; Assign Workers &mdash; '+wbsName+'</h3>';
+    h+='<div class="subtitle">'+slotLabel;
+    if(wbsBudMM>0) h+=' &nbsp;·&nbsp; Budget: <strong>'+wbsBudMM.toFixed(1)+' MM</strong> &nbsp;·&nbsp; Assigned: <strong style="color:var('+(effectiveCount>=Math.ceil(wbsBudMM)?'--green':'--red')+')">'+effectiveCount+'</strong>';
+    h+='</div>';
+    h+='</div>';
+
+    /* Filters + legend */
+    h+='<div class="wk-pick-filters">';
+    h+='<input type="text" id="wkPickFilter" placeholder="&#128269; Search by name, specialty..." value="'+ft+'" oninput="wkPickFilter(this.value)">';
+    h+='<div class="wk-pick-legend">';
+    h+='<span><span class="ldot" style="background:var(--green);border:2px solid var(--gm)"></span>Assigned here</span>';
+    h+='<span><span class="ldot" style="background:var(--rl);border:2px solid var(--red)"></span>Assigned elsewhere</span>';
+    h+='<span><span class="ldot" style="background:var(--bg2);border:2px solid var(--border2)"></span>Out of contract</span>';
+    h+='<span><span class="ldot" style="background:var(--white);border:2px solid var(--border2)"></span>Available</span>';
+    h+='</div>';
+    h+='<div class="wk-pick-fm-wrap">';
+    h+='<input type="checkbox" id="wpFm" style="width:15px;height:15px;accent-color:var(--amber)"><label for="wpFm" style="cursor:pointer">&#9733; Next assign = Foreman</label>';
+    h+='</div>';
+    h+='</div>';
+
+    /* Worker grid */
+    h+='<div class="wk-pick-body"><div class="wk-grid" id="wkPickGrid">';
+
+    /* Sort: assigned-here first, then available, then elsewhere, then out */
+    var workers=S.workers.slice();
+    workers.sort(function(a,b){
+      function rank(w){
+        if(effectivelyAssignedHere(w.id)) return 0;
+        var active=workerActiveInMonth(w,slotMo,slotYr);
+        if(!active) return 3;
+        var a2=getAssignmentSlot(w.id,month);
+        if(a2&&savedHere.indexOf(w.id)<0&&!staged[w.id]) return 2;
+        return 1;
+      }
+      return rank(a)-rank(b);
+    });
+
+    for(var i=0;i<workers.length;i++){
+      var wk=workers[i];
+      var active=workerActiveInMonth(wk,slotMo,slotYr);
+      var asgn=getAssignmentSlot(wk.id,month);
+      var asgnHere=effectivelyAssignedHere(wk.id);
+      var free=effectivelyFree(wk.id);
+      var co=getCompany(wk.companyId); var coName=co?co.name:'';
+      var sl=specLabel(wk.spec);
+
+      /* Apply filter */
+      if(ft){
+        var searchStr=(wk.name+' '+coName+' '+sl).toLowerCase();
+        if(searchStr.indexOf(ft)<0) continue;
+      }
+
+      var isFm=(effectiveForemanId===wk.id);
+      var stg=staged[wk.id]||'';
+
+      var cardCls='wk-card';
+      var statusHtml='';
+      var clickable=false;
+
+      if(!active){
+        cardCls+=' wc-out';
+        statusHtml='<span class="wc-status" style="background:#fff0d0;color:#a06010">&#9888; Outside contract</span>';
+        clickable=true; /* allow anyway — just warn */
+      } else if(asgnHere){
+        cardCls+=' '+(stg==='remove'?'wc-remove':'wc-staged');
+        if(stg==='remove'){
+          statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">✕ Will be removed</span>';
+        } else {
+          statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">✓ Assigned'+(isFm?' ★':'')+'</span>'+
+            '<span class="wc-status" style="background:var(--rl);color:var(--red);margin-top:3px;font-size:8px">click to remove</span>';
+        }
+        clickable=true;
+      } else if(asgn&&!stg){
+        /* assigned elsewhere and no staged change */
+        var onWBS=''; for(var j=0;j<S.wbs.length;j++) if(S.wbs[j].id===asgn.wbsId){onWBS=S.wbs[j].name;break;}
+        cardCls+=' wc-elsewhere';
+        statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">On: '+onWBS+'</span>';
+      } else {
+        clickable=true;
+        if(stg==='add'||stg==='add-foreman'){
+          cardCls+=' wc-staged';
+          statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">'+(stg==='add-foreman'?'&#9733; Will be foreman':'Will be assigned')+'</span>';
+        } else {
+          statusHtml='<span class="wc-status" style="background:var(--bg2);color:var(--tx3)">Available</span>';
+        }
+      }
+
+      h+='<div class="'+cardCls+'" '+(clickable?'data-wid="'+wk.id+'" data-wbs="'+wbsId+'" data-m="'+month+'" onclick="wkPickToggle(this)"':'')+'>';
+      h+='<div class="wc-name">'+wk.name+'</div>';
+      h+='<div class="wc-meta">'+(coName||'—')+(sl?' · <span class="spsel sk-'+wk.spec+'" style="cursor:default;font-size:9px;padding:1px 5px">'+sl+'</span>':'')+'</div>';
+      h+=statusHtml;
+      h+='</div>';
+    }
+    h+='</div></div>'; /* end wk-grid + wk-pick-body */
+
+    /* Footer */
+    h+='<div class="wk-pick-footer">';
+    h+='<div class="fp-info">';
+    if(stagedCount>0) h+='<strong>'+stagedCount+' pending change'+(stagedCount>1?'s':'')+'</strong> — click Save to apply';
+    else h+='Click a worker to add or remove';
+    h+='</div>';
+    h+='<button class="btn" onclick="wkPickClose()">Cancel</button>';
+    h+='<button class="btn pri" onclick="wkPickSave()">&#10003; Save &amp; Close</button>';
+    h+='</div>';
+    h+='</div>'; /* end wk-pick-modal */
+
+    box.innerHTML=h;
+    var _mbg=document.getElementById('mbg');_mbg.style.display='flex';_mbg.className='mbg fullscreen-picker';
+    var _bx=document.getElementById('mbox');_bx.className='';_bx.style.cssText='width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden;';
+    /* Restore filter focus */
+    if(ft){var f=document.getElementById('wkPickFilter');if(f){f.focus();f.setSelectionRange(ft.length,ft.length);}}
+  }
+
+  /* Public: toggle a worker card */
+  window._wkPickStaged=staged;
+  window._wkPickRebuild=buildModal;
+
+  buildModal('');
+}
+
+function wkPickToggle(el){
+  var wid=el.dataset.wid;
+  var staged=window._wkPickStaged;
+  var savedHere=getWBSWorkers(pickerOpen.wbsId,pickerOpen.month).map(function(w){return w.id;});
+  var isSavedHere=savedHere.indexOf(wid)>=0;
+  var isFm=document.getElementById('wpFm')&&document.getElementById('wpFm').checked;
+
+  if(isSavedHere){
+    /* Toggle remove */
+    if(staged[wid]==='remove') delete staged[wid];
+    else staged[wid]='remove';
+  } else {
+    /* Toggle add */
+    if(staged[wid]==='add'||staged[wid]==='add-foreman') delete staged[wid];
+    else staged[wid]=isFm?'add-foreman':'add';
+  }
+  /* Rebuild to show updated state */
+  var ft=document.getElementById('wkPickFilter');
+  window._wkPickRebuild(ft?ft.value:'');
+}
+
+function wkPickFilter(val){
+  window._wkPickRebuild(val);
+}
+
+function wkPickClose(){
+  window._wkPickStaged={};
+  closeModal();
+  render();
+}
+
+function wkPickSave(){
+  var staged=window._wkPickStaged||{};
+  var wbsId=pickerOpen.wbsId;
+  var month=pickerOpen.month;
+  var rYr=ML[month]?ML[month].year:YEAR;
+  var rMo=ML[month]!==undefined?ML[month].month:month;
+
+  Object.keys(staged).forEach(function(wid){
+    var action=staged[wid];
+    if(action==='remove'){
+      S.assignments=S.assignments.filter(function(a){
+        return !(a.workerId===wid&&a.month===rMo&&a.year===rYr);
+      });
+    } else if(action==='add'||action==='add-foreman'){
+      /* Remove existing assignment for this worker this month if any */
+      S.assignments=S.assignments.filter(function(a){
+        return !(a.workerId===wid&&a.month===rMo&&a.year===rYr);
+      });
+      assignWorker(wid,wbsId,month,action==='add-foreman');
+    }
+  });
+
+  window._wkPickStaged={};
+  closeModal();
+  render();
+}
+
+function remAssign(el){removeAssignment(el.dataset.wid,parseInt(el.dataset.m));}
+
+function showChipPop(e,el){
+  e.stopPropagation();
+  /* Remove any existing popover */
+  var old=document.getElementById('chipPop');if(old)old.remove();
+  var wid=el.dataset.wid; var m=parseInt(el.dataset.m); var wbsId=el.dataset.wbs;
+  var wk=getWorker(wid); if(!wk) return;
+  var pop=document.createElement('div');
+  pop.id='chipPop'; pop.className='chip-pop';
+  pop.innerHTML='<div class="chip-pop-name">'+wk.name+'</div>'+
+    '<button class="chip-pop-btn" onclick="chipRemove(\''+wid+'\','+m+')">&#128465; Remove from this month</button>';
+  /* Position near click */
+  pop.style.top=(e.clientY+6)+'px';
+  pop.style.left=Math.min(e.clientX,window.innerWidth-160)+'px';
+  document.body.appendChild(pop);
+  /* Close on outside click */
+  setTimeout(function(){
+    document.addEventListener('click',function _close(){
+      var p=document.getElementById('chipPop');if(p)p.remove();
+      document.removeEventListener('click',_close);
+    });
+  },0);
+}
+
+function chipRemove(wid,m){
+  var old=document.getElementById('chipPop');if(old)old.remove();
+  removeAssignment(wid,m);
+  renderAssignmentsPage();
+}
+function removeAssignment(workerId,month){
+  if(!confirm('Remove this worker from this month?')) return;
+  var rYr=ML[month]?ML[month].year:YEAR;
+  var rMo=ML[month]!==undefined?ML[month].month:month;
+  S.assignments=S.assignments.filter(function(a){
+    return !(a.workerId===workerId&&a.month===rMo&&a.year===rYr);
+  });
+  render();
+}
+
+
+/* ============================================================
+   MANUAL WORKER MODAL
+   ============================================================ */
+function openWorkerModal(id){
+  var box=document.getElementById('mbox');
+  var wk=id?getWorker(id):null;
+  var title=wk?'Edit Worker':'Add Worker';
+
+  function cOpts(sel){
+    var o='<option value="">-- None --</option>';
+    for(var i=0;i<S.companies.length;i++){
+      var co=S.companies[i];
+      o+='<option value="'+co.id+'"'+(sel===co.id?' selected':'')+'>'+co.name+'</option>';
+    }
+    return o;
+  }
+  function spOpts(sel){
+    var o='';
+    for(var i=0;i<SPECS.length;i++){
+      o+='<option value="'+SPECS[i].key+'"'+(sel===SPECS[i].key?' selected':'')+'>'+SPECS[i].label+'</option>';
+    }
+    return o;
+  }
+
+  var h='<h3>'+title+'</h3>';
+  h+='<label>Name</label><input id="mwname" value="'+(wk?wk.name:'')+'" placeholder="John Smith">';
+  h+='<label>Company</label><select id="mwco">'+cOpts(wk?wk.companyId:'')+'</select>';
+  h+='<label>Specialty</label><select id="mwsp">'+spOpts(wk?wk.spec:'')+'</select>';
+  h+='<label>Contract Start (DD/MM/YYYY)</label><input id="mwstart" value="'+(wk&&wk.dateDebut?fmtDate(new Date(wk.dateDebut)):'')+'" placeholder="01/01/2025">';
+  h+='<label>Contract End (DD/MM/YYYY)</label><input id="mwend" value="'+(wk&&wk.dateFinContrat?fmtDate(new Date(wk.dateFinContrat)):'')+'" placeholder="31/12/2025">';
+  h+='<label>Revised End (DD/MM/YYYY, optional)</label><input id="mwrev" value="'+(wk&&wk.dateFinRevisee?fmtDate(new Date(wk.dateFinRevisee)):'')+'" placeholder="">';
+  h+='<div class="ma">';
+  if(wk) h+='<button class="btn danger" onclick="deleteWorker(\'' +id+ '\');closeModal()">Delete</button>';
+  h+='<button class="btn" onclick="closeModal()">Cancel</button>';
+  h+='<button class="btn pri" onclick="saveWorkerModal('+(wk?'\'' +id+ '\'':'null')+')">Save</button>';
+  h+='</div>';
+
+  box.innerHTML=h;
+  document.getElementById('mbg').style.display='flex';
+  setTimeout(function(){var el=box.querySelector('input');if(el){el.focus();}},60);
+}
+
+function saveWorkerModal(id){
+  var name=gv('mwname').trim();
+  if(!name){alert('Name is required');return;}
+  var cid=gv('mwco');
+  var spec=gv('mwsp');
+  var startRaw=gv('mwstart').trim();
+  var endRaw=gv('mwend').trim();
+  var revRaw=gv('mwrev').trim();
+
+  function parseDMY(s){
+    if(!s) return null;
+    var p=s.split('/');
+    if(p.length===3) return new Date(+p[2],+p[1]-1,+p[0]);
+    return parseDate(s);
+  }
+
+  var ds=parseDMY(startRaw);
+  var de=parseDMY(endRaw);
+  var dr=parseDMY(revRaw);
+
+  if(id){
+    /* Edit existing */
+    for(var i=0;i<S.workers.length;i++){
+      if(S.workers[i].id===id){
+        S.workers[i].name=name;
+        S.workers[i].companyId=cid;
+        S.workers[i].spec=spec;
+        S.workers[i].dateDebut=ds?ds.toISOString():null;
+        S.workers[i].dateFinContrat=de?de.toISOString():null;
+        S.workers[i].dateFinRevisee=dr?dr.toISOString():null;
+        break;
+      }
+    }
+  } else {
+    /* New worker */
+    S.workers.push({
+      id:uid(),name:name,companyId:cid,spec:spec,
+      dateDebut:ds?ds.toISOString():null,
+      dateFinContrat:de?de.toISOString():null,
+      dateFinRevisee:dr?dr.toISOString():null
+    });
+  }
+  closeModal();
+  render();
+}
+
+
+/* ============================================================
+   SUGGESTIONS
+   ============================================================ */
+function toggleSug(){
+  var p=document.getElementById('sugPanel');
+  p.style.display=p.style.display==='block'?'none':'block';
+  if(p.style.display==='block') renderSugList();
+}
+function renderSugList(){
+  var list=document.getElementById('sugList');
+  if(!list) return;
+  var items=S.suggestions||[];
+  if(!items.length){list.innerHTML='<div style="font-size:11px;color:var(--tx3);padding:6px 0">No suggestions yet.</div>';return;}
+  var h='';
+  for(var i=items.length-1;i>=0;i--){
+    h+='<div class="sug-item"><span>'+items[i].text+'<br><span style="font-size:10px;color:var(--tx3)">'+items[i].date+'</span></span>';
+    h+='<span class="sug-del" onclick="delSug('+i+')">&#128465;</span></div>';
+  }
+  list.innerHTML=h;
+}
+function submitSug(){
+  var txt=document.getElementById('sugText').value.trim();
+  if(!txt) return;
+  if(!S.suggestions) S.suggestions=[];
+  var now=new Date();
+  S.suggestions.push({text:txt,date:now.getDate()+'/'+(now.getMonth()+1)+'/'+now.getFullYear()});
+  document.getElementById('sugText').value='';
+  saveS();
+  renderSugList();
+}
+function delSug(idx){
+  if(!S.suggestions) return;
+  S.suggestions.splice(idx,1);
+  saveS();
+  renderSugList();
+}
+
+/* ============================================================
+   SETTINGS MODAL (year, start month, specialties)
+   ============================================================ */
+function openSettingsModal(){
+  var box=document.getElementById('mbox');
+  var h='<h3>&#9881; Project Settings</h3>';
+
+  /* Year range + months */
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">';
+  h+='<div><label>Start Year</label><input id="sYear" type="number" value="'+(S.settings.startYear||2025)+'" min="2020" max="2040" style="font-size:12px"></div>';
+  var smOpts='';
+  for(var mi=0;mi<12;mi++) smOpts+='<option value="'+mi+'"'+(mi===(S.settings.startMonth||0)?' selected':'')+'>'+MONTHS[mi]+'</option>';
+  h+='<div><label>Start Month</label><select id="sStartM" style="font-size:12px">'+smOpts+'</select></div>';
+  h+='<div><label>End Year</label><input id="sEndY" type="number" value="'+(S.settings.endYear||2025)+'" min="2020" max="2040" style="font-size:12px"></div>';
+  var emOpts='';
+  for(var mi=0;mi<12;mi++) emOpts+='<option value="'+mi+'"'+(mi===(S.settings.endMonth!==undefined?S.settings.endMonth:11)?' selected':'')+'>'+MONTHS[mi]+'</option>';
+  h+='<div><label>End Month</label><select id="sEndM" style="font-size:12px">'+emOpts+'</select></div>';
+  h+='</div>';
+  h+='<div style="font-size:11px;color:var(--tx3);margin-top:6px" id="sRange"></div>';
+
+  /* Specialties manager */
+  h+='<div class="modal-section">Specialties</div>';
+  h+='<div id="specList" style="margin-top:8px">';
+  for(var si=0;si<S.specs.length;si++){
+    var sp=S.specs[si];
+    h+='<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px" data-si="'+si+'">';
+    h+='<input value="'+sp.key+'" placeholder="KEY" style="width:80px;font-family:var(--mono);font-size:12px;font-weight:700" onchange="updateSpec('+si+',\'key\',this.value)">';
+    h+='<input value="'+sp.label+'" placeholder="Label" style="flex:1;font-size:12px" onchange="updateSpec('+si+',\'label\',this.value)">';
+    h+='<button class="bic del" onclick="removeSpec('+si+')">x</button>';
+    h+='</div>';
+  }
+  h+='</div>';
+  h+='<button class="btn soft" onclick="addSpec()" style="width:100%;justify-content:center;margin-top:4px">+ Add Specialty</button>';
+  h+='<div class="ma"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveSettings()">Save</button></div>';
+
+  box.innerHTML=h;
+  document.getElementById('mbg').style.display='flex';
+}
+
+function updateSpec(i,field,val){
+  if(!S.specs[i]) return;
+  S.specs[i][field]=val.trim();
+  /* Update companies tarifs to include new key if needed */
+}
+
+function removeSpec(i){
+  if(S.specs.length<=1){alert('At least one specialty required.');return;}
+  S.specs.splice(i,1);
+  openSettingsModal(); /* re-render */
+}
+
+function addSpec(){
+  S.specs.push({key:'NEW',label:'New Specialty'});
+  openSettingsModal();
+}
+
+function saveSettings(){
+  var y=parseInt(document.getElementById('sYear').value)||2025;
+  var _sm=parseInt(document.getElementById('sStartM').value); var sm=isNaN(_sm)?0:_sm;
+  S.settings.startYear=y;
+  S.settings.startMonth=sm;
+  S.settings.endYear=parseInt(document.getElementById('sEndY').value)||y;
+  var _em=parseInt(document.getElementById('sEndM').value);
+  S.settings.endMonth=isNaN(_em)?11:_em;
+  /* validate: end must be after start */
+  if(S.settings.endYear<y||(S.settings.endYear===y&&S.settings.endMonth<sm)){
+    S.settings.endYear=y; S.settings.endMonth=11;
+  }
+  /* Specs are updated live via updateSpec */
+  /* Ensure companies have tarifs for all specs */
+  for(var ci=0;ci<S.companies.length;ci++){
+    for(var si=0;si<S.specs.length;si++){
+      var k=S.specs[si].key;
+      if(S.companies[ci].tarifs[k]===undefined) S.companies[ci].tarifs[k]=0;
+    }
+  }
+  closeModal();
+  render();
+}
+
 
 
 /* ---- Import conflict dialog ---- */
@@ -3084,7 +4157,6 @@ function wkMultiClose(){
   window._multiStaged={};
   if(window._asSel&&window._multiWbsId) window._asSel[window._multiWbsId]={};
   closeModal();
-  /* scroll preserved by renderAssignmentsPage itself */
   renderAssignmentsPage();
 }
 
@@ -3117,7 +4189,7 @@ function wkMultiSave(){
   closeModal();
   saveS();
   showToast(applied+' assignments saved','ok');
-  renderAssignmentsPage(); /* scroll preserved internally */
+  renderAssignmentsPage();
 }
 /* ============================================================
    BACKUP EXPORT / IMPORT
