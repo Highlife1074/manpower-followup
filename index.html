@@ -256,9 +256,11 @@ td.edt:empty::after{content:'—';color:var(--border2);font-family:var(--mono);f
 .bot-table tr:nth-child(even) td{background:#f8f6f2;}
 
 tr.dragging{opacity:.3;} tr.dov td{border-top:2px solid var(--blue)!important;}
-::-webkit-scrollbar{width:5px;height:5px;}
-::-webkit-scrollbar-track{background:var(--bg);}
-::-webkit-scrollbar-thumb{background:var(--border2);border-radius:10px;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-track{background:var(--bg2);}
+::-webkit-scrollbar-thumb{background:#a09888;border-radius:8px;border:2px solid var(--bg2);}
+::-webkit-scrollbar-thumb:hover{background:#8a8070;}
+::-webkit-scrollbar-corner{background:var(--bg2);}
 
 /* Foreman chip */
 .as-chip.fm{background:#f0e8d8;color:#7a4a10;border:1.5px solid #c8a060;}
@@ -324,9 +326,31 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .as-table td{border-bottom:1px solid var(--border);border-right:1px solid var(--border);padding:0;vertical-align:top;}
 .as-table td.ap1{position:sticky;left:0;z-index:4;background:var(--white);padding:4px 8px;font-weight:600;font-size:11px;}
 .as-table td.ap2{position:sticky;left:200px;z-index:4;background:var(--white);padding:4px 8px;text-align:right;}
-.as-cell{min-width:80px;min-height:44px;padding:3px 4px;position:relative;}
-.as-bud{font-family:var(--mono);font-size:9px;color:var(--tx3);margin-bottom:2px;}
-.as-names{display:flex;flex-wrap:wrap;gap:2px;}
+.as-cell{min-width:64px;min-height:36px;padding:3px 6px;position:relative;display:flex;align-items:center;justify-content:center;}
+.as-count{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--tx2);text-align:center;line-height:1.2;}
+.as-count .n-ass{color:var(--green);}
+.as-count .n-miss{color:var(--red);}
+.as-count .sep{color:var(--tx3);font-weight:400;}
+.as-names{display:none;}  /* hidden — shown in tooltip */
+/* Tooltip on hover */
+.as-cell[data-tip]:hover::after{
+  content:attr(data-tip);
+  position:fixed;
+  background:#1e1b18;
+  color:#fff;
+  font-size:11px;
+  font-weight:400;
+  padding:6px 10px;
+  border-radius:8px;
+  white-space:pre;
+  z-index:9999;
+  pointer-events:none;
+  max-width:220px;
+  line-height:1.5;
+  box-shadow:0 4px 16px rgba(0,0,0,.3);
+  top:var(--tip-y,50%);
+  left:var(--tip-x,50%);
+}
 
 /* Worker chip — clickable with remove popover */
 .as-chip{font-size:9px;font-weight:600;padding:2px 6px;border-radius:10px;background:var(--gl);color:var(--green);cursor:pointer;white-space:nowrap;position:relative;user-select:none;}
@@ -446,6 +470,10 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
   <div class="logo"><div class="logo-ic">S</div><div><div>Manpower Followup</div><div class="logo-sub">Man-Month Budget Control</div></div></div>
   <div id="syncIndicator" style="font-size:11px;color:var(--tx3)">&#9899; Connecting...</div>
   <div class="topbar-r" id="topbarR"></div>
+  <!-- Static file inputs — not recreated on render -->
+  <input type="file" id="xlsxInput" accept=".xlsx,.xls" style="display:none" onchange="handleXLSX(this.files[0])">
+  <input type="file" id="wbsImportInput" accept=".xlsx,.xls" style="display:none" onchange="handleWBSXLSX(this.files[0])">
+  <input type="file" id="importFileInput" accept=".json" style="display:none" onchange="importBackup(this.files[0])">
 </div>
 <div class="tab-bar" id="tabBar"></div>
 <div class="recap-bar" id="recapBar"></div>
@@ -951,8 +979,8 @@ function renderTabBar(){
 function switchTab(v){VIEW=v;render();}
 function goWorkers(){VIEW="workers";render();}
 function goAssign(){VIEW="assignments";render();}
-function triggerWBSImport(){var el=document.getElementById("wbsImportInput");if(el){el.value="";el.click();}}
-function triggerXLSX(){document.getElementById("xlsxInput").click();}
+function triggerWBSImport2_old(){var el=document.getElementById("wbsImportInput");if(el){el.value="";el.click();}}
+function triggerXLSX(){var el=document.getElementById('xlsxInput');if(el){el.value='';el.click();}}
 
 /* ============================================================
    TOPBAR RIGHT
@@ -965,13 +993,13 @@ function renderTopbarR(){
   }
   h+='<button class="btn soft" onclick="openModal(\'companies\')">&#127970; Companies</button>';
   h+='<button class="btn soft" onclick="triggerWBSImport()" title="Import WBS hierarchy from Excel">&#128196; Import WBS</button>';
-  h+='<input type="file" id="wbsImportInput" accept=".xlsx,.xls" style="display:none" onchange="handleWBSXLSX(this.files[0])">';
+  /* Worker import */
+  h+='<button class="btn soft" onclick="triggerXLSX()" title="Import workers from Excel">&#128101; Import Workers</button>';
   h+='<button class="btn soft" onclick="openSettingsModal()">&#9881; Settings</button>';
   h+='<button class="btn" onclick="openPinModal(\'change\')">&#128272; PIN</button>';
   h+='<button class="btn" onclick="exportCSV()">&#8595; CSV</button>';
   h+='<button class="btn soft" onclick="exportBackup()" title="Export full data backup (.json)">&#128190; Backup</button>';
   h+='<button class="btn soft" onclick="triggerImport()" title="Import data from backup file">&#128228; Import</button>';
-  h+='<input type="file" id="importFileInput" accept=".json" style="display:none" onchange="importBackup(this.files[0])">';
   h+='<span id="syncIndicator" style="font-size:11px;padding:4px 8px;border-radius:6px;background:var(--bg2);border:1px solid var(--border2)">&#9899; Connecting</span>';
   h+='<button class="btn" onclick="saveS()" title="Force save to cloud" style="padding:5px 8px">&#9729; Save</button>';
   document.getElementById('topbarR').innerHTML=h;
@@ -3153,11 +3181,7 @@ function exportBackup(){
   showToast('Backup saved: '+filename,'ok');
 }
 
-function triggerImport(){
-  var el=document.getElementById('importFileInput');
-  if(el) el.value=''; /* reset so same file can be re-imported */
-  if(el) el.click();
-}
+function triggerImport(){var el=document.getElementById('importFileInput');if(el){el.value='';el.click();}}
 
 function importBackup(file){
   if(!file) return;
@@ -3279,6 +3303,95 @@ document.addEventListener('DOMContentLoaded', function(){
   initFirebase(); /* Then connect to Firebase */
 });
 
+
+/* Tooltip position tracking */
+document.addEventListener('mousemove',function(e){
+  document.documentElement.style.setProperty('--tip-x',(e.clientX+12)+'px');
+  document.documentElement.style.setProperty('--tip-y',(e.clientY+12)+'px');
+});
+
+/* ============================================================
+   SETTINGS MODAL
+   ============================================================ */
+function openSettingsModal(){
+  var box=document.getElementById('mbox');
+  box.className='modal';
+  document.getElementById('mbg').className='mbg';
+  var h='<h3>&#9881; Settings</h3>';
+
+  /* Date range */
+  var sy=S.settings.startYear||2025;
+  var sm=S.settings.startMonth||0;
+  var ey=S.settings.endYear||sy;
+  var em=S.settings.endMonth!==undefined?S.settings.endMonth:11;
+  var nSlots=(ey-sy)*12+(em-sm)+1;
+
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:8px">';
+  /* Start */
+  h+='<div style="background:var(--bg2);border-radius:9px;padding:12px 14px">';
+  h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;margin-bottom:8px">Project Start</div>';
+  h+='<div style="display:flex;gap:8px">';
+  var smO='';for(var mi=0;mi<12;mi++) smO+='<option value="'+mi+'"'+(mi===sm?' selected':'')+'>'+MONTHS[mi]+'</option>';
+  h+='<div style="flex:1"><label style="font-size:10px">Month</label><select id="sStartM">'+smO+'</select></div>';
+  h+='<div style="width:80px"><label style="font-size:10px">Year</label><input id="sYear" type="number" value="'+sy+'" min="2020" max="2040"></div>';
+  h+='</div></div>';
+  /* End */
+  h+='<div style="background:var(--bg2);border-radius:9px;padding:12px 14px">';
+  h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;margin-bottom:8px">Project End</div>';
+  h+='<div style="display:flex;gap:8px">';
+  var emO='';for(var mi=0;mi<12;mi++) emO+='<option value="'+mi+'"'+(mi===em?' selected':'')+'>'+MONTHS[mi]+'</option>';
+  h+='<div style="flex:1"><label style="font-size:10px">Month</label><select id="sEndM">'+emO+'</select></div>';
+  h+='<div style="width:80px"><label style="font-size:10px">Year</label><input id="sEndY" type="number" value="'+ey+'" min="2020" max="2040"></div>';
+  h+='</div></div>';
+  h+='</div>';
+  h+='<div style="font-size:11px;color:var(--blue);background:var(--bl);border-radius:7px;padding:7px 12px;margin-bottom:12px">';
+  h+='&#128197; '+MONTHS[sm]+' '+sy+' → '+MONTHS[em]+' '+ey;
+  h+=' &nbsp;·&nbsp; <strong>'+nSlots+' month'+(nSlots>1?'s':'')+' ('+nSlots+' columns)</strong>';
+  h+='</div>';
+
+  /* Specialty manager */
+  h+='<div style="margin-bottom:12px"><label>Specialties</label>';
+  h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">';
+  for(var i=0;i<S.specs.length;i++){
+    h+='<span style="display:inline-flex;align-items:center;gap:4px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:3px 8px;font-size:11px">';
+    h+=S.specs[i].label+' <button class="bic del" style="width:14px;height:14px;font-size:8px" onclick="delSpec(\''+S.specs[i].key+'\')" title="Delete">x</button>';
+    h+='</span>';
+  }
+  h+='</div>';
+  h+='<div style="display:flex;gap:6px"><input id="sNewSpecKey" placeholder="KEY" style="width:70px"><input id="sNewSpecLabel" placeholder="Label"><button class="btn" onclick="addSpec()">+ Add</button></div>';
+  h+='</div>';
+
+  h+='<div class="ma"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveSettings()">Save</button></div>';
+  box.innerHTML=h;
+  document.getElementById('mbg').style.display='flex';
+}
+
+function saveSettings(){
+  var y=parseInt(document.getElementById('sYear').value)||2025;
+  var _sm=parseInt(document.getElementById('sStartM').value); var sm=isNaN(_sm)?0:_sm;
+  var ey2=parseInt(document.getElementById('sEndY').value)||y;
+  var _em=parseInt(document.getElementById('sEndM').value); var em=isNaN(_em)?11:_em;
+  if(ey2<y||(ey2===y&&em<sm)){ey2=y;em=11;}
+  S.settings.startYear=y; S.settings.startMonth=sm;
+  S.settings.endYear=ey2; S.settings.endMonth=em;
+  closeModal(); saveS(); render();
+}
+
+function addSpec(){
+  var key=(document.getElementById('sNewSpecKey').value||'').toUpperCase().trim();
+  var label=(document.getElementById('sNewSpecLabel').value||'').trim();
+  if(!key||!label){showToast('Key and label required','warn');return;}
+  if(S.specs.some(function(s){return s.key===key;})){showToast('Key already exists','warn');return;}
+  S.specs.push({key:key,label:label});
+  refreshSpecsFromS(); saveS(); openSettingsModal();
+}
+
+function delSpec(key){
+  if(!confirm('Delete specialty '+key+'?')) return;
+  S.specs=S.specs.filter(function(s){return s.key!==key;});
+  refreshSpecsFromS(); saveS(); openSettingsModal();
+}
+
 /* ============================================================
    WORKERS PAGE
    ============================================================ */
@@ -3365,13 +3478,15 @@ function wkCbChange(cb){
   wkUpdateBar();
 }
 function wkToggleAll(masterCb){
+  var check=masterCb.checked;
   WK_SEL={};
   document.querySelectorAll('.wk-table tbody input.wk-cb').forEach(function(cb){
-    cb.checked=masterCb.checked;
-    if(masterCb.checked) WK_SEL[cb.dataset.wid]=true;
-    var tr=cb.closest('tr'); if(tr) tr.classList.toggle('wk-selected',masterCb.checked);
+    cb.checked=check;
+    if(check) WK_SEL[cb.dataset.wid]=true;
+    var tr=cb.closest('tr'); if(tr) tr.classList.toggle('wk-selected',check);
   });
-  wkUpdateBar();
+  /* Don't call wkUpdateBar (it re-renders and loses state) — just render once */
+  renderWorkersPage();
 }
 function wkSelectAll(){document.getElementById('wkCbAll')&&(document.getElementById('wkCbAll').checked=true);wkToggleAll({checked:true});}
 function wkSelectNone(){document.getElementById('wkCbAll')&&(document.getElementById('wkCbAll').checked=false);wkToggleAll({checked:false});}
@@ -3407,7 +3522,11 @@ function wkUpdateBar(){
     var total=document.querySelectorAll('.wk-table tbody input.wk-cb').length;
     all.indeterminate=(n>0&&n<total); all.checked=(n>0&&n===total);
   }
-  if(n===0||n>0) renderWorkersPage();
+  /* Update selection bar visibility without full re-render */
+  var bar=document.getElementById('wkSelBar');
+  if(!bar&&n>0) renderWorkersPage();  /* create bar */
+  else if(bar&&n===0) renderWorkersPage();  /* remove bar */
+  else if(bar){var cnt=bar.querySelector('.scount');if(cnt)cnt.textContent=n;}
 }
 function wkDeleteSelected(){
   var ids=Object.keys(WK_SEL).filter(function(k){return WK_SEL[k];});
@@ -3533,15 +3652,36 @@ function renderAssignmentsPage(){
             else if(nW<Math.ceil(budHM)) cellCls+=' as-alert-ora';
             else cellCls+=' as-alert-ok';
           }
-          html+='<td onclick="asToggleCell(\''+wbs.id+'\','+m+',this)" style="cursor:pointer;padding:2px">';
-          html+='<div class="'+cellCls+'">';
-          if(budHM>0) html+='<div class="as-bud">'+budHM.toFixed(1)+' / '+Math.ceil(budHM)+'w</div>';
+          html+='<td onclick="asToggleCell(\''+wbs.id+'\','+m+',this)" oncontextmenu="asCellContext(event,\''+wbs.id+'\','+m+')" style="cursor:pointer;padding:2px">';
+          /* Build tooltip with worker names */
+          var tipLines=[];
+          if(budHM>0) tipLines.push('Budget: '+budHM.toFixed(1)+' HM / '+Math.ceil(budHM)+' workers');
+          var fmA=getForeman(wbs.id,m);
+          for(var k=0;k<workers.length;k++){
+            var wk2=workers[k];
+            var isExp=!workerActiveInMonth(wk2,ML[m]?ML[m].month:m,ML[m]?ML[m].year:YEAR);
+            var isFmWk=fmA&&fmA.workerId===wk2.id;
+            tipLines.push((isFmWk?'★ ':'')+wk2.name+(wk2.workerId?' #'+wk2.workerId:'')+(isExp?' ⚠':''));
+          }
+          var tip=tipLines.join('\n');
+          var need=budHM>0?Math.ceil(budHM):0;
+          /* Count display: "assigned / needed" or just assigned */
+          var countHtml='';
+          if(budHM>0){
+            var clsN=nW>=need?'n-ass':nW>0?'n-ass':' n-miss';
+            countHtml='<div class="as-count"><span class="'+(nW>=need?'n-ass':'n-miss')+'">'+nW+'</span><span class="sep"> / </span><span>'+need+'</span></div>';
+          } else if(nW>0){
+            countHtml='<div class="as-count"><span class="n-ass">'+nW+'</span></div>';
+          }
+          html+='<div class="'+cellCls+'" '+(tip?'data-tip="'+tip.replace(/"/g,'&quot;').replace(/\n/g,'&#10;')+'"':'')+' >';
+          html+=countHtml;
+          /* Keep hidden chips for chipPop functionality */
           html+='<div class="as-names">';
           for(var k=0;k<workers.length;k++){
             var wk2=workers[k];
             var isExp=!workerActiveInMonth(wk2,ML[m]?ML[m].month:m,ML[m]?ML[m].year:YEAR);
-            var fmA=getForeman(wbs.id,m); var isFmWk=fmA&&fmA.workerId===wk2.id;
-            html+='<span class="as-chip'+(isExp?' exp':'')+(isFmWk?' fm':'')+'" data-wid="'+wk2.id+'" data-wbs="'+wbs.id+'" data-m="'+m+'" onclick="showChipPop(event,this)">'+wk2.name.split(' ')[0]+(wk2.workerId?' #'+wk2.workerId:'')+( isExp?' !':'')+'</span>';
+            var isFmWk2=fmA&&fmA.workerId===wk2.id;
+            html+='<span class="as-chip'+(isExp?' exp':'')+(isFmWk2?' fm':'')+'" data-wid="'+wk2.id+'" data-wbs="'+wbs.id+'" data-m="'+m+'" onclick="event.stopPropagation();showChipPop(event,this)" style="display:none">'+wk2.name+'</span>';
           }
           html+='</div>';
           html+='</div></td>';
@@ -3561,10 +3701,39 @@ function renderAssignmentsPage(){
   setTimeout(function(){var p=document.getElementById('pageContent');if(p){p.scrollLeft=_pcSX;p.scrollTop=_pcSY;}},0);
 }
 
-function asToggleCell(wbsId,m,td){
+function asCellContext(e,wbsId,m){
+  e.preventDefault();e.stopPropagation();
+  var workers=getWBSWorkers(wbsId,m);
+  if(!workers.length) return;
+  var old=document.getElementById('chipPop');if(old)old.remove();
+  var pop=document.createElement('div');
+  pop.id='chipPop';pop.className='chip-pop';
+  var inner='<div class="chip-pop-name">Remove worker:</div>';
+  workers.forEach(function(wk){
+    inner+='<button class="chip-pop-btn" onclick="chipRemove(\''+wk.id+'\','+m+',\''+wbsId+'\')">&#128465; '+wk.name+(wk.workerId?' #'+wk.workerId:'')+'</button>';
+  });
+  pop.innerHTML=inner;
+  pop.style.top=(e.clientY+6)+'px';
+  pop.style.left=Math.min(e.clientX,window.innerWidth-200)+'px';
+  document.body.appendChild(pop);
+  setTimeout(function(){document.addEventListener('click',function _c(){var p=document.getElementById('chipPop');if(p)p.remove();document.removeEventListener('click',_c);});},0);
+}
+
+function asToggleCell(wbsId,m,el){
+  if(!window._asSel) window._asSel={};
   if(!window._asSel[wbsId]) window._asSel[wbsId]={};
-  var was=window._asSel[wbsId][m];
+  var was=!!window._asSel[wbsId][m];
   window._asSel[wbsId][m]=!was;
+  /* Visual feedback immediately without waiting for full re-render */
+  el.classList.toggle('as-cell-sel',!was);
+  /* Update the assign button count */
+  var totalSel=0;
+  Object.keys(window._asSel).forEach(function(wid){
+    Object.keys(window._asSel[wid]||{}).forEach(function(k){if(window._asSel[wid][k])totalSel++;});
+  });
+  var btn=document.querySelector('.btn.pri[onclick="asOpenAnyPicker()"]');
+  if(btn) btn.textContent='Assign workers → '+totalSel+' cell'+(totalSel>1?'s':'')+' selected';
+  /* Show/hide the assign bar without full re-render */
   renderAssignmentsPage();
 }
 
@@ -3580,6 +3749,7 @@ function asSelectCol(m){
 function asClearAll(){
   window._asSel={};
   renderAssignmentsPage();
+  showToast('Selection cleared','ok');
 }
 
 function asClearSel(wbsId){
@@ -3684,3 +3854,5 @@ function openWP(el){openWorkerPickerMulti(el.dataset.wbs,[parseInt(el.dataset.m)
 </div>
 </body>
 </html>
+
+function triggerWBSImport(){var el=document.getElementById('wbsImportInput');if(el){el.value='';el.click();}}
