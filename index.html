@@ -382,8 +382,8 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .wk-card.wc-remove{border-color:var(--red)!important;background:var(--rl)!important;}
 .wk-card.wc-elsewhere{border-color:var(--red);background:var(--rl);cursor:not-allowed;opacity:.75;}
 .wk-card.wc-elsewhere:hover{transform:none;border-color:var(--red);background:var(--rl);}
-.wk-card.wc-out{opacity:.4;cursor:not-allowed;background:var(--bg2);}
-.wk-card.wc-out:hover{transform:none;border-color:var(--border2);background:var(--bg2);}
+.wk-card.wc-out{opacity:.65;cursor:pointer;background:#fff8f0;border-color:#e8c090;}
+.wk-card.wc-out:hover{transform:translateY(-1px);border-color:var(--amber);background:#fff3e0;}
 .wk-card .wc-name{font-weight:700;font-size:12px;color:var(--tx);margin-bottom:3px;}
 .wk-card .wc-meta{font-size:10px;color:var(--tx3);}
 .wk-card .wc-status{font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;display:inline-block;margin-top:5px;}
@@ -3387,7 +3387,8 @@ function openWorkerPicker(btn,wbsId,month){
 
       if(!active){
         cardCls+=' wc-out';
-        statusHtml='<span class="wc-status" style="background:var(--bg2);color:var(--tx3)">Out of contract</span>';
+        statusHtml='<span class="wc-status" style="background:#fff0d0;color:#a06010">&#9888; Outside contract</span>';
+        clickable=true; /* allow anyway — just warn */
       } else if(asgnHere){
         cardCls+=' '+(stg==='remove'?'wc-remove':'wc-staged');
         if(stg==='remove'){
@@ -4093,7 +4094,8 @@ function openWorkerPickerMulti(wbsId,months){
 
       if(outOfContract){
         cardCls+=' wc-out';
-        statusHtml='<span class="wc-status" style="background:var(--bg2);color:var(--tx3)">Out of contract</span>';
+        statusHtml='<span class="wc-status" style="background:#fff0d0;color:#a06010">&#9888; Outside contract</span>';
+        clickable=true; /* allow with warning */
       } else if(stg==='add'||stg==='add-foreman'){
         cardCls+=' wc-staged';
         statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">Will be assigned ('+months.length+'m)</span>';
