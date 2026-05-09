@@ -402,8 +402,28 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .wk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;}
 .wk-card{border:2px solid var(--border2);border-radius:10px;padding:11px 14px;cursor:pointer;transition:border .13s,background .13s,transform .1s;position:relative;}
 .wk-card:hover{border-color:var(--blue);background:var(--bl);transform:translateY(-1px);}
-.wk-card.wc-staged{border-color:var(--green)!important;background:var(--gl)!important;}
-.wk-card.wc-remove{border-color:var(--red)!important;background:var(--rl)!important;}
+.wk-card.wc-staged{
+  border-color:var(--green)!important;
+  background:var(--gl)!important;
+  box-shadow:0 0 0 3px rgba(58,125,84,.35)!important;
+  transform:translateY(-2px)!important;
+}
+.wk-card.wc-staged .wc-name{color:var(--green)!important;}
+.wk-card.wc-staged::before{
+  content:'✓';
+  position:absolute;top:6px;right:8px;
+  font-size:16px;font-weight:900;color:var(--green);
+}
+.wk-card.wc-remove{
+  border-color:var(--red)!important;
+  background:var(--rl)!important;
+  box-shadow:0 0 0 3px rgba(168,64,64,.3)!important;
+}
+.wk-card.wc-remove::before{
+  content:'✕';
+  position:absolute;top:6px;right:8px;
+  font-size:14px;font-weight:900;color:var(--red);
+}
 .wk-card.wc-elsewhere{border-color:var(--red);background:var(--rl);cursor:not-allowed;opacity:.75;}
 .wk-card.wc-elsewhere:hover{transform:none;border-color:var(--red);background:var(--rl);}
 .wk-card.wc-out{opacity:.65;cursor:pointer;background:#fff8f0;border-color:#e8c090;}
@@ -920,11 +940,25 @@ function filterW(pid){return S.wbs.filter(function(w){return w.parentId===pid;})
    VIEW STATE
    ============================================================ */
 var VIEW='budget';
+/* ── Universal scroll preservation ── */
+function saveScrollState(){
+  var s={wx:window.scrollX||0,wy:window.scrollY||0};
+  ['.tw','.as-grid','#pageContent','.wk-table'].forEach(function(sel){
+    var el=document.querySelector(sel);
+    if(el) s[sel]={x:el.scrollLeft,y:el.scrollTop};
+  });
+  return s;
+}
+function restoreScrollState(s){
+  if(!s) return;
+  if(s.wx||s.wy) window.scrollTo(s.wx,s.wy);
+  ['.tw','.as-grid','#pageContent','.wk-table'].forEach(function(sel){
+    if(s[sel]){var el=document.querySelector(sel);if(el){el.scrollLeft=s[sel].x;el.scrollTop=s[sel].y;}}
+  });
+}
+
 function render(){
-  /* Preserve scroll position across re-renders */
-  var tw=document.querySelector('.tw');
-  var _sx=tw?tw.scrollLeft:0, _sy=tw?tw.scrollTop:0;
-  var _wx=window.scrollX||0, _wy=window.scrollY||0;
+  var _scroll=saveScrollState();
 
   applySettings();
   if(!document.getElementById('tabBar')) return;
@@ -936,12 +970,7 @@ function render(){
   saveS();
   wireInvNav();
 
-  /* Restore scroll after DOM rebuild */
-  setTimeout(function(){
-    var tw2=document.querySelector('.tw');
-    if(tw2){tw2.scrollLeft=_sx; tw2.scrollTop=_sy;}
-    if(_wx||_wy) window.scrollTo(_wx,_wy);
-  },0);
+  setTimeout(function(){restoreScrollState(_scroll);},0);
 }
 /* Wire Tab/Enter navigation on invoice inputs */
 function wireInvNav(){
@@ -3083,7 +3112,16 @@ function openWorkerPickerMulti(wbsId,months){
 
     h+='</div></div>';
     h+='<div class="wk-pick-footer">';
-    h+='<div class="fp-info">'+(Object.keys(staged).length?'<strong>'+Object.keys(staged).length+' workers</strong> × '+months.length+' months':'Click workers to assign across all selected months')+'</div>';
+    var addC=Object.keys(staged).filter(function(k){return staged[k]==='add'||staged[k]==='add-foreman';}).length;
+    var remC=Object.keys(staged).filter(function(k){return staged[k]==='remove';}).length;
+    h+='<div class="fp-info">';
+    if(addC>0||remC>0){
+      if(addC>0) h+='<span style="background:var(--gl);color:var(--green);border-radius:20px;padding:3px 10px;font-weight:700;margin-right:6px">+'+addC+' worker'+(addC>1?'s':'')+' × '+months.length+' months</span>';
+      if(remC>0) h+='<span style="background:var(--rl);color:var(--red);border-radius:20px;padding:3px 10px;font-weight:700">−'+remC+' to remove</span>';
+    } else {
+      h+='<span style="color:var(--tx3)">Click a worker to select · Click again to deselect</span>';
+    }
+    h+='</div>';
     h+='<button class="btn" onclick="wkMultiClose()">Cancel</button>';
     h+='<button class="btn pri" onclick="wkMultiSave()">✓ Save & Close</button>';
     h+='</div></div>';
@@ -3467,10 +3505,15 @@ function renderWorkersPage(){
     html+='</tr>';
   }
   html+='</tbody></table></div>';
+  var _scroll=saveScrollState();
   document.getElementById('pageContent').innerHTML=html;
+  setTimeout(function(){restoreScrollState(_scroll);},0);
 }
 
-function wkDoSearch(val){window._wkSearch=val;renderWorkersPage();}
+function wkDoSearch(val){
+  window._wkSearch=val;
+  renderWorkersPage();
+}
 function wkCbChange(cb){
   var wid=cb.dataset.wid;
   if(cb.checked) WK_SEL[wid]=true; else delete WK_SEL[wid];
@@ -3551,8 +3594,7 @@ window._asSel={};   /* {wbsId: {slotIdx: true}} */
 window._asTab='assign';
 
 function renderAssignmentsPage(){
-  var _pc=document.getElementById('pageContent');
-  var _pcSX=_pc?_pc.scrollLeft:0, _pcSY=_pc?_pc.scrollTop:0;
+  var _scroll=saveScrollState();
 
   /* Count selected cells */
   var totalSel=0;
@@ -3568,7 +3610,7 @@ function renderAssignmentsPage(){
 
   if(window._asTab==='overview'){
     document.getElementById('pageContent').innerHTML=html+renderCoverageSummary();
-    setTimeout(function(){var p=document.getElementById('pageContent');if(p){p.scrollLeft=_pcSX;p.scrollTop=_pcSY;}},0);
+    setTimeout(function(){restoreScrollState(_scroll);},0);
     return;
   }
 
@@ -3698,7 +3740,7 @@ function renderAssignmentsPage(){
   }
   html+='</tbody></table></div>';
   document.getElementById('pageContent').innerHTML=html;
-  setTimeout(function(){var p=document.getElementById('pageContent');if(p){p.scrollLeft=_pcSX;p.scrollTop=_pcSY;}},0);
+  setTimeout(function(){restoreScrollState(_scroll);},0);
 }
 
 function asCellContext(e,wbsId,m){
