@@ -3264,6 +3264,209 @@ function wkMultiSave(){
   showToast(msg.join(', ')||'No changes','ok');
   renderAssignmentsPage();
 }
+
+/* ============================================================
+   UNIFIED ASSIGNMENT PICKER — handles multi-WBS, multi-month
+   ============================================================ */
+function openAssignmentPicker(pairs){
+  /* pairs = [{wbsId, month}, ...] */
+  window._pickerPairs=pairs;
+  window._pickerStaged={}; /* {workerId: 'add'|'remove'} */
+
+  /* Build labels */
+  var wbsIds=pairs.map(function(p){return p.wbsId;}).filter(function(v,i,a){return a.indexOf(v)===i;});
+  var months=pairs.map(function(p){return p.month;}).filter(function(v,i,a){return a.indexOf(v)===i;});
+  var wbsNames=wbsIds.map(function(id){for(var i=0;i<S.wbs.length;i++)if(S.wbs[i].id===id)return S.wbs[i].name;return id;});
+  var monthLabels=months.map(function(m){return ML[m]?ML[m].short:MS[m];});
+
+  function buildPicker(ft){
+    ft=(ft||'').toLowerCase();
+    var box=document.getElementById('mbox');
+    box.className=''; box.style.cssText='width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden;';
+    var _mbg=document.getElementById('mbg');
+    _mbg.style.display='flex'; _mbg.className='mbg fullscreen-picker';
+
+    /* For each worker, compute status across all pairs */
+    function workerStatus(wk){
+      var assignedPairs=[]; var freePairs=[]; var elsewherePairs=[];
+      pairs.forEach(function(p){
+        var sl=ML[p.month]; if(!sl) return;
+        var active=workerActiveInMonth(wk,sl.month,sl.year);
+        if(!active){freePairs.push(p);return;} /* treat out-of-contract as assignable */
+        var asgn=getAssignmentSlot(wk.id,p.month);
+        if(!asgn) freePairs.push(p);
+        else if(asgn.wbsId===p.wbsId) assignedPairs.push(p);
+        else elsewherePairs.push(p);
+      });
+      return{assigned:assignedPairs,free:freePairs,elsewhere:elsewherePairs};
+    }
+
+    var workers=S.workers.slice().sort(function(a,b){
+      var sa=workerStatus(a), sb=workerStatus(b);
+      var ra=sa.assigned.length>0?0:sa.free.length>0?1:2;
+      var rb=sb.assigned.length>0?0:sb.free.length>0?1:2;
+      return ra-rb;
+    });
+
+    var staged=window._pickerStaged;
+    var nAssigned=workers.filter(function(w){return workerStatus(w).assigned.length>0||staged[w.id]==='add';}).length;
+
+    var h='<div class="wk-pick-modal">';
+    /* Header */
+    h+='<div class="wk-pick-header">';
+    h+='<h3>&#128101; Assign / Remove Workers</h3>';
+    h+='<div class="subtitle">';
+    if(wbsNames.length<=3) h+=wbsNames.join(', ');
+    else h+=wbsNames.length+' WBS';
+    h+=' &nbsp;·&nbsp; '+monthLabels.join(', ')+'</div>';
+    h+='</div>';
+
+    /* Filter + legend */
+    h+='<div class="wk-pick-filters">';
+    h+='<input type="text" id="wkPickFilter" placeholder="&#128269; Search..." value="'+ft+'" oninput="wkPickFilter(this.value)">';
+    h+='<div class="wk-pick-legend">';
+    h+='<span><span class="ldot" style="background:var(--green);border:2px solid var(--gm)"></span>Assigned here — click to remove</span>';
+    h+='<span><span class="ldot" style="background:var(--white);border:2px solid var(--border2)"></span>Available — click to add</span>';
+    h+='<span><span class="ldot" style="background:var(--rl);border:2px solid var(--red)"></span>Assigned elsewhere</span>';
+    h+='</div>';
+    h+='<div class="wk-pick-fm-wrap"><input type="checkbox" id="wpFm" style="width:15px;height:15px;accent-color:var(--amber)"><label for="wpFm" style="cursor:pointer">&#9733; Foreman</label></div>';
+    h+='</div>';
+
+    /* Info bar */
+    var addC=Object.keys(staged).filter(function(k){return staged[k]==='add'||staged[k]==='add-foreman';}).length;
+    var remC=Object.keys(staged).filter(function(k){return staged[k]==='remove';}).length;
+
+    /* Worker grid */
+    h+='<div class="wk-pick-body"><div class="wk-grid" id="wkPickGrid">';
+    for(var i=0;i<workers.length;i++){
+      var wk=workers[i];
+      if(ft){var ss=(wk.name+' '+specLabel(wk.spec)+' '+(getCompany(wk.companyId)?getCompany(wk.companyId).name:'')+' '+(wk.workerId||'')).toLowerCase();if(ss.indexOf(ft)<0)continue;}
+      var stg=staged[wk.id]||'';
+      var st=workerStatus(wk);
+      var co=getCompany(wk.companyId); var coName=co?co.name:'';
+      var sl2=specLabel(wk.spec);
+      var cardCls='wk-card'; var statusHtml=''; var clickable=true;
+
+      if(stg==='remove'){
+        cardCls+=' wc-remove';
+        statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">✕ Will be removed</span>';
+      } else if(stg==='add'||stg==='add-foreman'){
+        cardCls+=' wc-staged';
+        statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">✓ Will be assigned</span>';
+      } else if(st.assigned.length===pairs.length){
+        cardCls+=' wc-staged';
+        statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">✓ Assigned (all) — click to remove</span>';
+      } else if(st.assigned.length>0){
+        cardCls+=' wc-staged';
+        statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">✓ Assigned '+st.assigned.length+'/'+pairs.length+' — click to toggle</span>';
+      } else if(st.elsewhere.length===pairs.length){
+        cardCls+=' wc-elsewhere';
+        statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">On other WBS</span>';
+      } else {
+        statusHtml='<span class="wc-status" style="background:var(--bg2);color:var(--tx3)">Available</span>';
+      }
+
+      h+='<div class="'+cardCls+'" data-wid="'+wk.id+'" onclick="pickerToggle(this)">';
+      h+='<div class="wc-name">'+wk.name+(wk.workerId?' <span style="font-size:9px;color:var(--tx3)">#'+wk.workerId+'</span>':'')+'</div>';
+      h+='<div class="wc-meta">'+(coName||'—')+(sl2?' · <span class="spsel sk-'+wk.spec+'" style="cursor:default;font-size:9px;padding:1px 5px">'+sl2+'</span>':'')+'</div>';
+      h+=statusHtml;
+      h+='</div>';
+    }
+    h+='</div></div>';
+
+    /* Footer */
+    h+='<div class="wk-pick-footer">';
+    h+='<div class="fp-info">';
+    if(addC>0||remC>0){
+      if(addC>0) h+='<span style="background:var(--gl);color:var(--green);border-radius:20px;padding:3px 10px;font-weight:700;margin-right:6px">+'+addC+' to assign</span>';
+      if(remC>0) h+='<span style="background:var(--rl);color:var(--red);border-radius:20px;padding:3px 10px;font-weight:700">−'+remC+' to remove</span>';
+    } else {
+      h+='<span style="color:var(--tx3)">Click green = remove · Click white = add</span>';
+    }
+    h+='</div>';
+    h+='<button class="btn" onclick="pickerClose()">Cancel</button>';
+    h+='<button class="btn pri" onclick="pickerSave()">✓ Save & Close</button>';
+    h+='</div></div>';
+
+    box.innerHTML=h;
+  }
+
+  window._pickerBuild=buildPicker;
+  buildPicker('');
+}
+
+function wkPickFilter(val){
+  if(window._pickerBuild) window._pickerBuild(val);
+  else if(window._multiRebuild) window._multiRebuild(val);
+}
+
+function pickerToggle(el){
+  var wid=el.dataset.wid;
+  var staged=window._pickerStaged;
+  var pairs=window._pickerPairs||[];
+
+  /* Determine current real state */
+  var assignedAnywhere=pairs.some(function(p){
+    var a=getAssignmentSlot(wid,p.month);
+    return a&&a.wbsId===p.wbsId;
+  });
+  var isFm=document.getElementById('wpFm')&&document.getElementById('wpFm').checked;
+
+  if(staged[wid]){
+    /* Un-stage */
+    delete staged[wid];
+  } else if(assignedAnywhere){
+    staged[wid]='remove';
+  } else {
+    staged[wid]=isFm?'add-foreman':'add';
+  }
+  window._pickerBuild(document.getElementById('wkPickFilter')?document.getElementById('wkPickFilter').value:'');
+}
+
+function pickerClose(){
+  window._pickerStaged={}; window._pickerPairs=[];
+  closeModal();
+  renderAssignmentsPage();
+}
+
+function pickerSave(){
+  var staged=window._pickerStaged||{};
+  var pairs=window._pickerPairs||[];
+  var added=0,removed=0;
+
+  Object.keys(staged).forEach(function(wid){
+    var action=staged[wid];
+    pairs.forEach(function(p){
+      var sl=ML[p.month]; if(!sl) return;
+      var rYr=sl.year; var rMo=sl.month;
+      if(action==='remove'){
+        var before=S.assignments.length;
+        S.assignments=S.assignments.filter(function(a){
+          return !(a.workerId===wid&&a.month===rMo&&a.year===rYr&&a.wbsId===p.wbsId);
+        });
+        if(S.assignments.length<before) removed++;
+      } else if(action==='add'||action==='add-foreman'){
+        /* Remove any existing for this worker+month */
+        S.assignments=S.assignments.filter(function(a){
+          return !(a.workerId===wid&&a.month===rMo&&a.year===rYr);
+        });
+        assignWorker(wid,p.wbsId,p.month,action==='add-foreman');
+        added++;
+      }
+    });
+  });
+
+  window._pickerStaged={}; window._pickerPairs=[];
+  /* Sync to CC */
+  pairs.forEach(function(p){syncAssignmentsToCC(p.wbsId,p.month);});
+  closeModal();
+  saveS();
+  window._asSel={};
+  var msg=[]; if(added) msg.push('+'+added+' assigned'); if(removed) msg.push('−'+removed+' removed');
+  showToast(msg.join(', ')||'No changes','ok');
+  renderAssignmentsPage();
+}
+
 /* ============================================================
    BACKUP EXPORT / IMPORT
    ============================================================ */
@@ -4095,11 +4298,9 @@ function asOpenAnyPicker(){
       pairs.push({wbsId:wbsId,month:+k});
     });
   });
-  if(!pairs.length) return;
-  var wbsIds=pairs.map(function(p){return p.wbsId;}).filter(function(v,i,a){return a.indexOf(v)===i;});
-  var months=pairs.map(function(p){return p.month;}).filter(function(v,i,a){return a.indexOf(v)===i;});
-  if(wbsIds.length===1) openWorkerPickerMulti(wbsIds[0],months);
-  else openWorkerPickerMultiWBS(pairs);
+  if(!pairs.length){showToast('Select cells first','warn');return;}
+  /* Always pass all pairs — the picker handles multi-WBS */
+  openAssignmentPicker(pairs);
 }
 
 function setAsTab(tab){window._asTab=tab;renderAssignmentsPage();}
