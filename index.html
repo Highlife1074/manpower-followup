@@ -946,6 +946,13 @@ var VIEW='budget';
 /* Track shift key for multi-select in assignments */
 document.addEventListener('keydown',function(e){if(e.key==='Shift') window._asShift=true;});
 document.addEventListener('keyup',function(e){if(e.key==='Shift') window._asShift=false;});
+function setCCMonth(val){
+  var m=parseInt(val);
+  S.ccM=isNaN(m)?-1:m;
+  saveS(); render();
+  showToast('CC Month set to '+(S.ccM>=0&&ML[S.ccM]?ML[S.ccM].label:'Not started'),'ok');
+}
+
 /* ── Assignment past-month lock ── */
 function asUnlockPast(){
   var pin=prompt('Enter PIN to unlock past months:');
@@ -1324,7 +1331,6 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
    CC PAGE
    ============================================================ */
 function renderCCPage(page){
-  if(page>S.ccM)S.ccM=page;
   var tB=0,tRC=0,tETC=0;
   for(var i=0;i<S.wbs.length;i++){tB+=addBudget(S.wbs[i]);tRC+=reelCum(S.wbs[i],page);for(var m=page+1;m<NM;m++)tETC+=rad(S.wbs[i],m);}
   tB=+tB.toFixed(1);tRC=+tRC.toFixed(1);tETC=+tETC.toFixed(1);
@@ -1338,7 +1344,12 @@ function renderCCPage(page){
     rcCard('A','var(--yl)','EAC','color:var(--yel)',eac+' HM','Actual+ETC');
 
   var slotLabel=ML[page]?ML[page].label:(MONTHS[page]+' '+YEAR);
+  /* Quick CC month selector inline */
+  var ccMqOpts='<option value="-1">— Not started —</option>';
+  for(var mi=0;mi<NM;mi++) ccMqOpts+='<option value="'+mi+'"'+(mi===S.ccM?' selected':'')+'>'+(ML[mi]?ML[mi].short:MS[mi])+'</option>';
   var banner='<div class="cc-banner"><span class="ctitle">Cost Control — '+slotLabel+'</span>';
+  banner+='<span style="font-size:11px;color:var(--tx3);margin-left:12px">CC Month:</span>';
+  banner+='<select style="font-size:11px;padding:2px 6px;border:1px solid var(--border2);border-radius:6px;background:var(--white);cursor:pointer" onchange="setCCMonth(this.value)">'+ccMqOpts+'</select>';
   banner+='<div class="cc-legend"><span class="cl-item"><span class="cl-dot" style="background:var(--tx3)"></span>Past (read-only)</span>';
   banner+='<span class="cl-item"><span class="cl-dot" style="background:var(--pur)"></span>CC Actual</span>';
   banner+='<span class="cl-item"><span class="cl-dot" style="background:var(--ora)"></span>ETC</span></div>';
@@ -3422,6 +3433,15 @@ function openSettingsModal(){
   h+='<div style="display:flex;gap:6px"><input id="sNewSpecKey" placeholder="KEY" style="width:70px"><input id="sNewSpecLabel" placeholder="Label"><button class="btn" onclick="addSpec()">+ Add</button></div>';
   h+='</div>';
 
+  /* CC Month selector */
+  h+='<div style="background:var(--rl);border-radius:9px;padding:12px 14px;margin-bottom:8px">';
+  h+='<div style="font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase;margin-bottom:8px">&#128197; Current CC Month (Actual month)</div>';
+  h+='<div style="display:flex;gap:8px;align-items:center">';
+  var ccMopts='<option value="-1">— Not started —</option>';
+  for(var mi=0;mi<NM;mi++) ccMopts+='<option value="'+mi+'"'+(mi===S.ccM?' selected':'')+'>'+(ML[mi]?ML[mi].label:MS[mi]+' '+YEAR)+'</option>';
+  h+='<select id="sCCM" style="flex:1">'+ccMopts+'</select>';
+  h+='<span style="font-size:11px;color:var(--tx3)">Months ≤ this = Actual · Months &gt; this = ETC</span>';
+  h+='</div></div>';
   h+='<div class="ma"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn pri" onclick="saveSettings()">Save</button></div>';
   box.innerHTML=h;
   document.getElementById('mbg').style.display='flex';
@@ -3435,6 +3455,8 @@ function saveSettings(){
   if(ey2<y||(ey2===y&&em<sm)){ey2=y;em=11;}
   S.settings.startYear=y; S.settings.startMonth=sm;
   S.settings.endYear=ey2; S.settings.endMonth=em;
+  var _ccm=parseInt(document.getElementById('sCCM').value);
+  S.ccM=isNaN(_ccm)?-1:_ccm;
   closeModal(); saveS(); render();
 }
 
