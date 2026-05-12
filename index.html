@@ -864,6 +864,8 @@ function migrate(s){
     if(!w.subRows)w.subRows=[];
     w.subRows.forEach(function(sr){if(sr.companyId===undefined)sr.companyId=w.companyId||'';});
     if(w.contractRef===undefined)w.contractRef='';
+    if(w.comment===undefined)w.comment='';
+    if(w.rating===undefined)w.rating='';
     if(w.contractAmt===undefined)w.contractAmt=0;
   });
   s.assignments.forEach(function(a){if(a.isForeman===undefined)a.isForeman=false;});
@@ -972,6 +974,56 @@ function asLockPast(){
   S.asLocked=true; saveS(); renderAssignmentsPage();
   showToast('Past months locked','ok');
 }
+
+/* ── Real HM and EUR from assignments ── */
+function workerPU(wk){
+  /* PU of a worker = tariff of their company + specialty */
+  if(!wk.companyId||!wk.spec) return 0;
+  return getPU(wk.companyId,wk.spec)||0;
+}
+
+function reelHMFromAssign(wbsId,slotIdx){
+  /* 1 worker assigned = 1 HM */
+  return getWBSWorkers(wbsId,slotIdx).length;
+}
+
+function reelEURFromAssign(wbsId,slotIdx){
+  /* Sum of PU of each assigned worker */
+  var workers=getWBSWorkers(wbsId,slotIdx);
+  var total=0;
+  for(var i=0;i<workers.length;i++) total+=workerPU(workers[i]);
+  return+total.toFixed(0);
+}
+
+function etcHMFromAssign(wbsId,slotIdx){
+  /* Future months: sum of workers assigned on future slots */
+  var total=0;
+  for(var m=slotIdx+1;m<NM;m++) total+=getWBSWorkers(wbsId,m).length;
+  return total;
+}
+
+function etcEURFromAssign(wbsId,slotIdx){
+  var total=0;
+  for(var m=slotIdx+1;m<NM;m++){
+    var workers=getWBSWorkers(wbsId,m);
+    for(var i=0;i<workers.length;i++) total+=workerPU(workers[i]);
+  }
+  return+total.toFixed(0);
+}
+
+function budgetCumAtMonth(wbs,page){
+  /* Sum of budget HM from slot 0 to page (inclusive) */
+  var t=0;
+  for(var m=0;m<=page;m++) t+=bud(wbs,m);
+  return+t.toFixed(1);
+}
+
+
+function toggleLegend(){
+  var el=document.getElementById('ccLegend');
+  if(el) el.style.display=el.style.display==='none'?'flex':'none';
+}
+
 /* ── Universal scroll preservation ── */
 function saveScrollState(){
   var s={wx:window.scrollX||0,wy:window.scrollY||0};
@@ -1335,23 +1387,61 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
    CC PAGE
    ============================================================ */
 function renderCCPage(page){
-  var tB=0,tRC=0,tETC=0;
-  for(var i=0;i<S.wbs.length;i++){tB+=addBudget(S.wbs[i]);tRC+=reelCum(S.wbs[i],page);for(var m=page+1;m<NM;m++)tETC+=rad(S.wbs[i],m);}
-  tB=+tB.toFixed(1);tRC=+tRC.toFixed(1);tETC=+tETC.toFixed(1);
-  var va=+(tRC-tB).toFixed(1);var eac=+(tRC+tETC).toFixed(1);
-  var vc=va>0?'var(--red)':'var(--green)';var vb=va>0?'var(--rl)':'var(--gl)';
+  /* ── KPI calculations ── */
+  var tB=0;        /* Total budget HM */
+  var tBcum=0;     /* Budget HM cumulated up to CC month */
+  var tRC=0;       /* Actual HM from assignments (past+CC month) */
+  var tRCeur=0;    /* Actual EUR from assignments */
+  var tETC=0;      /* ETC HM = assignments on future months */
+  var tETCeur=0;   /* ETC EUR */
+
+  for(var i=0;i<S.wbs.length;i++){
+    var w=S.wbs[i];
+    tB+=addBudget(w);
+    tBcum+=budgetCumAtMonth(w,page);
+    /* Actual: from assignments (1 worker = 1 HM) */
+    for(var m=0;m<=page;m++) tRC+=reelHMFromAssign(w.id,m);
+    tRCeur+=reelEURFromAssign(w.id,page); /* current month EUR */
+    /* ETC: assignments on future slots */
+    tETC+=etcHMFromAssign(w.id,page);
+    tETCeur+=etcEURFromAssign(w.id,page);
+  }
+  tB=+tB.toFixed(1); tBcum=+tBcum.toFixed(1);
+  tRC=+tRC.toFixed(1); tETC=+tETC.toFixed(1);
+  var eac=+(tRC+tETC).toFixed(1);
+
+  /* Variance this month = Budget cumul. to CC month − Actual cumul. */
+  var vMonth=+(tBcum-tRC).toFixed(1);
+  /* Variance at completion = Total Budget − EAC */
+  var vFinal=+(tB-eac).toFixed(1);
+
+  var vmCol=vMonth>=0?'var(--green)':'var(--red)'; var vmBg=vMonth>=0?'var(--gl)':'var(--rl)';
+  var vfCol=vFinal>=0?'var(--green)':'var(--red)'; var vfBg=vFinal>=0?'var(--gl)':'var(--rl)';
+
   document.getElementById('recapBar').innerHTML=
-    rcCard('B','var(--bl)','Ref Budget','color:var(--blue)',tB+' HM','Reference')+
-    rcCard('R','var(--gl)','Actual cumul.','color:var(--green)',tRC+' HM','As of '+(ML[page]?ML[page].short:MS[page]))+
-    rcCard('V',vb,'Variance','color:'+vc,(va>0?'+':'')+va+' HM','Cumul.')+
-    rcCard('D','var(--ol)','Remaining ETC','color:var(--ora)',tETC+' HM','Future months')+
-    rcCard('A','var(--yl)','EAC','color:var(--yel)',eac+' HM','Actual+ETC');
+    rcCard('B','var(--bl)','Ref Budget','color:var(--blue)',tB+' HM','Total planned')+
+    rcCard('R','var(--gl)','Actual','color:var(--green)',tRC+' HM','Cumul. to '+(ML[page]?ML[page].short:MS[page]))+
+    rcCard('V',vmBg,'Variance (month)','color:'+vmCol,(vMonth>0?'+':'')+vMonth+' HM','Budget cum. − Actual cum.')+
+    rcCard('D','var(--ol)','ETC','color:var(--ora)',tETC+' HM','Assignments future months')+
+    rcCard('A','var(--yl)','EAC','color:var(--yel)',eac+' HM','Actual + ETC')+
+    rcCard('F',vfBg,'Variance (final)','color:'+vfCol,(vFinal>0?'+':'')+vFinal+' HM','Budget − EAC')+
+    '<div style="display:flex;align-items:center;cursor:pointer;padding:0 8px" onclick="toggleLegend()" title="Show/hide legend"><span style="font-size:16px">ℹ️</span></div>';
 
   var slotLabel=ML[page]?ML[page].label:(MONTHS[page]+' '+YEAR);
+  /* KPI Legend */
+  var legendHTML='<div id="ccLegend" style="display:none;flex-wrap:wrap;gap:8px;padding:8px 16px;background:var(--bg2);border-top:1px solid var(--border);font-size:11px;color:var(--tx2)">';
+  legendHTML+='<strong style="color:var(--tx)">KPI Legend:</strong>';
+  legendHTML+='<span><strong style="color:var(--blue)">Ref Budget</strong> — Total planned HM from Initial Budget</span>';
+  legendHTML+='<span><strong style="color:var(--green)">Actual</strong> — HM actually worked (1 worker assigned = 1 HM) cumulated to CC month</span>';
+  legendHTML+='<span><strong>Variance (month)</strong> — Budget planned up to CC month minus Actual. Positive = ahead of plan</span>';
+  legendHTML+='<span><strong style="color:var(--ora)">ETC</strong> — Estimate To Complete: HM from assignments on future months</span>';
+  legendHTML+='<span><strong style="color:var(--yel)">EAC</strong> — Estimate At Completion: Actual + ETC</span>';
+  legendHTML+='<span><strong>Variance (final)</strong> — Total Budget minus EAC. Positive = under budget at completion</span>';
+  legendHTML+='</div>';
   /* Quick CC month selector inline */
   var ccMqOpts='<option value="-1">— Not started —</option>';
   for(var mi=0;mi<NM;mi++) ccMqOpts+='<option value="'+mi+'"'+(mi===S.ccM?' selected':'')+'>'+(ML[mi]?ML[mi].short:MS[mi])+'</option>';
-  var banner='<div class="cc-banner"><span class="ctitle">Cost Control — '+slotLabel+'</span>';
+  var banner=legendHTML+'<div class="cc-banner"><span class="ctitle">Cost Control — '+slotLabel+'</span>';
   banner+='<span style="font-size:11px;color:var(--tx3);margin-left:12px">CC Month:</span>';
   banner+='<select style="font-size:11px;padding:2px 6px;border:1px solid var(--border2);border-radius:6px;background:var(--white);cursor:pointer" onchange="setCCMonth(this.value)">'+ccMqOpts+'</select>';
   banner+='<div class="cc-legend"><span class="cl-item"><span class="cl-dot" style="background:var(--tx3)"></span>Past (read-only)</span>';
@@ -3821,6 +3911,11 @@ function openWorkerModal(id){
   h+='<div><label>Company</label><select id="wkCo" onchange="wkAutoFillPU()">'+coO+'</select></div>';
   h+='<div><label>Specialty</label><select id="wkSpec" onchange="wkAutoFillPU()">'+spO+'</select></div>';
   h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  var ratingO=['','Very Good','Good','Average','Bad'].map(function(r){return '<option value="'+r+'"'+(wk.rating===r?' selected':'')+'>'+( r||'— No rating —')+'</option>';}).join('');
+  h+='<div><label>Rating</label><select id="wkRating">'+ratingO+'</select></div>';
+  h+='<div><label>Comment</label><input id="wkComment" value="'+(wk.comment||'')+'"></div>';
+  h+='</div>';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">';
   h+='<div><label>Contract Start</label><input id="wkStart" type="date" value="'+fmtDate(wk.dateDebut)+'"></div>';
   h+='<div><label>Contract End</label><input id="wkEnd" type="date" value="'+fmtDate(wk.dateFinContrat)+'"></div>';
@@ -3892,9 +3987,20 @@ function renderWorkersPage(){
     html+='</div>';
   }
   /* Search */
-  html+='<div style="padding:6px 14px;display:flex;gap:8px;align-items:center;flex-shrink:0">';
-  html+='<input type="text" id="wkSearch" placeholder="&#128269; Search name, company, specialty..." oninput="wkDoSearch(this.value)" style="padding:5px 10px;border:1.5px solid var(--border2);border-radius:7px;font-size:12px;width:280px;outline:none">';
-  html+='<span style="font-size:11px;color:var(--tx3)">'+S.workers.length+' workers</span>';
+  /* Filter bar */
+  var coOpts='<option value="">All companies</option>';
+  for(var ci=0;ci<S.companies.length;ci++) coOpts+='<option value="'+S.companies[ci].id+'"'+(window._wkFilterCo===S.companies[ci].id?' selected':'')+'>'+S.companies[ci].name+'</option>';
+  var spOpts='<option value="">All specialties</option>';
+  for(var si=0;si<SPECS.length;si++) spOpts+='<option value="'+SPECS[si].key+'"'+(window._wkFilterSpec===SPECS[si].key?' selected':'')+'>'+SPECS[si].label+'</option>';
+  var rtOpts='<option value="">All ratings</option>';
+  ['Very Good','Good','Average','Bad'].forEach(function(r){rtOpts+='<option value="'+r+'"'+(window._wkFilterRating===r?' selected':'')+'>'+r+'</option>';});
+  html+='<div style="padding:6px 14px;display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:wrap;border-bottom:1px solid var(--border)">';
+  html+='<input type="text" id="wkSearch" placeholder="&#128269; Search..." oninput="wkDoSearch(this.value)" value="'+(window._wkSearch||'')+'" style="padding:5px 10px;border:1.5px solid var(--border2);border-radius:7px;font-size:12px;width:200px;outline:none">';
+  html+='<select style="font-size:12px;padding:5px 8px;border:1.5px solid var(--border2);border-radius:7px" onchange="wkSetFilter(\'co\',this.value)">'+coOpts+'</select>';
+  html+='<select style="font-size:12px;padding:5px 8px;border:1.5px solid var(--border2);border-radius:7px" onchange="wkSetFilter(\'spec\',this.value)">'+spOpts+'</select>';
+  html+='<select style="font-size:12px;padding:5px 8px;border:1.5px solid var(--border2);border-radius:7px" onchange="wkSetFilter(\'rating\',this.value)">'+rtOpts+'</select>';
+  html+='<button class="btn soft" style="font-size:11px" onclick="wkToggleSort()">A→Z '+(window._wkSort?'▲':'▼')+'</button>';
+  html+='<span style="font-size:11px;color:var(--tx3);margin-left:4px">'+S.workers.length+' workers</span>';
   html+='<button class="btn pri" style="margin-left:auto" onclick="openWorkerModal(null)">&#10133; Add Worker</button>';
   html+='</div>';
   /* Table */
@@ -3903,21 +4009,27 @@ function renderWorkersPage(){
   html+='<thead><tr>';
   html+='<th style="width:32px;text-align:center"><input class="wk-cb" type="checkbox" id="wkCbAll" onchange="wkToggleAll(this)" title="Select all"></th>';
   html+='<th>#</th><th>Name</th><th>Company</th><th>Specialty</th>';
-  html+='<th>Start</th><th>End</th><th>Status</th>';
+  html+='<th>Start</th><th>End</th><th>Status</th><th>Rating</th><th>Comment</th>';
   for(var m=0;m<NM;m++) html+='<th style="min-width:24px;text-align:center;font-size:9px">'+(ML[m]?ML[m].short:MS[m])+'</th>';
   html+='<th></th>';
   html+='</tr></thead><tbody>';
 
   var searchVal=window._wkSearch||'';
+  var filterCo=window._wkFilterCo||'';
+  var filterSpec=window._wkFilterSpec||'';
+  var filterRating=window._wkFilterRating||'';
+  /* Sort */
+  var sorted=S.workers.slice();
+  if(window._wkSort) sorted.sort(function(a,b){return a.name.localeCompare(b.name);});
   var now=new Date();
-  for(var wi=0;wi<S.workers.length;wi++){
-    var wk=S.workers[wi];
+  for(var wi=0;wi<sorted.length;wi++){
+    var wk=sorted[wi];
     var co=getCompany(wk.companyId); var coName=co?co.name:'';
     var sl=specLabel(wk.spec);
-    if(searchVal){
-      var srch=(wk.name+' '+coName+' '+sl+' '+(wk.workerId||'')).toLowerCase();
-      if(srch.indexOf(searchVal.toLowerCase())<0) continue;
-    }
+    if(searchVal){var srch=(wk.name+' '+coName+' '+sl+' '+(wk.workerId||'')).toLowerCase();if(srch.indexOf(searchVal.toLowerCase())<0) continue;}
+    if(filterCo&&wk.companyId!==filterCo) continue;
+    if(filterSpec&&wk.spec!==filterSpec) continue;
+    if(filterRating&&(wk.rating||'')!==filterRating) continue;
     var gst=workerGlobalStatus(wk);
     var stBadge='';
     if(gst==='active') stBadge='<span class="sb sb-ok">Active</span>';
@@ -3944,7 +4056,10 @@ function renderWorkersPage(){
       var col2=asgn2?'color:var(--green)':active2?'color:var(--border2)':'color:var(--rl)';
       html+='<td style="text-align:center;font-size:10px;'+col2+'">'+dot+'</td>';
     }
-    html+='<td><button class="bic" onclick="openWorkerModal(\''+wk.id+'\')">e</button> <button class="bic del" onclick="deleteWorker(\''+wk.id+'\')">x</button></td>';
+    var ratingColor={'Very Good':'var(--green)','Good':'var(--blue)','Average':'var(--amber)','Bad':'var(--red)'}[wk.rating||'']||'var(--tx3)';
+    html+='<td style="font-size:10px;font-weight:700;color:'+ratingColor+'">'+(wk.rating||'—')+'</td>';
+    html+='<td style="font-size:10px;color:var(--tx3);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+(wk.comment||'')+'">'+(wk.comment||'')+'</td>';
+    html+='<td style="white-space:nowrap"><button class="bic" onclick="openWorkerModal(\''+wk.id+'\')">e</button> <button class="bic del" onclick="deleteWorker(\''+wk.id+'\')">x</button></td>';
     html+='</tr>';
   }
   html+='</tbody></table></div>';
@@ -3953,6 +4068,14 @@ function renderWorkersPage(){
   setTimeout(function(){restoreScrollState(_scroll);},0);
 }
 
+
+function wkSetFilter(type,val){
+  if(type==='co') window._wkFilterCo=val;
+  else if(type==='spec') window._wkFilterSpec=val;
+  else if(type==='rating') window._wkFilterRating=val;
+  renderWorkersPage();
+}
+function wkToggleSort(){window._wkSort=!window._wkSort;renderWorkersPage();}
 function wkDoSearch(val){
   window._wkSearch=val;
   renderWorkersPage();
