@@ -962,8 +962,10 @@ document.addEventListener('keyup',function(e){if(e.key==='Shift') window._asShif
 function setCCMonth(val){
   var m=parseInt(val);
   S.ccM=isNaN(m)?-1:m;
+  /* Auto-propagate assignments to new CC month if empty */
+  if(S.ccM>0&&!monthIsConfirmed(S.ccM)) propagateFromPrevMonth(S.ccM);
   saveS(); render();
-  showToast('CC Month set to '+(S.ccM>=0&&ML[S.ccM]?ML[S.ccM].label:'Not started'),'ok');
+  showToast('CC Month: '+(S.ccM>=0&&ML[S.ccM]?ML[S.ccM].label:'Not started'),'ok');
 }
 
 /* ── Assignment past-month lock ── */
@@ -1115,6 +1117,13 @@ function renderTopbarR(){
   h+='<button class="btn soft" onclick="triggerWBSImport()" title="Import WBS hierarchy from Excel">&#128196; Import WBS</button>';
   /* Worker import */
   h+='<button class="btn soft" onclick="triggerXLSX()" title="Import workers from Excel">&#128101; Import Workers</button>';
+  /* CC Month selector — always visible in topbar */
+  var ccLabel=S.ccM>=0&&ML[S.ccM]?ML[S.ccM].short:'—';
+  h+='<span style="font-size:11px;color:var(--tx3)">CC:</span>';
+  h+='<select style="font-size:11px;padding:3px 7px;border:1.5px solid var(--pur);border-radius:7px;background:var(--white);cursor:pointer;color:var(--pur);font-weight:700" onchange="setCCMonth(this.value)" title="Current Cost Control month">';
+  h+='<option value="-1"'+(S.ccM<0?' selected':'')+'>— Not started —</option>';
+  for(var mi=0;mi<NM;mi++) h+='<option value="'+mi+'"'+(mi===S.ccM?' selected':'')+'>'+(ML[mi]?ML[mi].label:MS[mi]+' '+YEAR)+'</option>';
+  h+='</select>';
   h+='<button class="btn soft" onclick="openSettingsModal()">&#9881; Settings</button>';
   h+='<button class="btn" onclick="openPinModal(\'change\')">&#128272; PIN</button>';
   h+='<button class="btn" onclick="exportCSV()">&#8595; CSV</button>';
@@ -1449,8 +1458,7 @@ function renderCCPage(page){
   var ccMqOpts='<option value="-1">— Not started —</option>';
   for(var mi=0;mi<NM;mi++) ccMqOpts+='<option value="'+mi+'"'+(mi===S.ccM?' selected':'')+'>'+(ML[mi]?ML[mi].short:MS[mi])+'</option>';
   var banner=legendHTML+'<div class="cc-banner"><span class="ctitle">Cost Control — '+slotLabel+'</span>';
-  banner+='<span style="font-size:11px;color:var(--tx3);margin-left:12px">CC Month:</span>';
-  banner+='<select style="font-size:11px;padding:2px 6px;border:1px solid var(--border2);border-radius:6px;background:var(--white);cursor:pointer" onchange="setCCMonth(this.value)">'+ccMqOpts+'</select>';
+  /* CC month selector is now in topbar */
   banner+='<div class="cc-legend"><span class="cl-item"><span class="cl-dot" style="background:var(--tx3)"></span>Past (read-only)</span>';
   banner+='<span class="cl-item"><span class="cl-dot" style="background:var(--pur)"></span>CC Actual</span>';
   banner+='<span class="cl-item"><span class="cl-dot" style="background:var(--ora)"></span>ETC</span></div>';
@@ -4178,9 +4186,10 @@ window._asTab='assign';
 function renderAssignmentsPage(){
   var _scroll=saveScrollState();
   if(!window._asTab) window._asTab='assign';
-  if(window._asPage===undefined||window._asPage<0) window._asPage=Math.max(0,S.ccM>=0?S.ccM:0);
-  if(window._asPage>=NM) window._asPage=NM-1;
-  var page=window._asPage;
+  /* Always start from CC month — no manual page selection */
+  var page=S.ccM>=0?S.ccM:0;
+  if(page>=NM) page=NM-1;
+  window._asPage=page;
 
   /* Sub-tabs: Assignments / Overview */
   var html='<div style="display:flex;gap:6px;padding:6px 14px;border-bottom:1px solid var(--border2);background:var(--bg2);flex-shrink:0;align-items:center">';
@@ -4194,26 +4203,13 @@ function renderAssignmentsPage(){
     return;
   }
 
-  /* ── Month tabs bar ── */
-  html+='<div style="display:flex;align-items:stretch;background:var(--bg2);border-bottom:2px solid var(--border2);flex-shrink:0;overflow-x:auto">';
-  for(var m=0;m<NM;m++){
-    var lbl=ML[m]?ML[m].short:MS[m];
-    var isAct=(m===page);
-    var dot=m<S.ccM?'#a09890':m===S.ccM?'var(--pur)':'var(--bm)';
-    var hasAssign=monthIsConfirmed(m);
-    html+='<div onclick="asSetPage('+m+')" style="cursor:pointer;padding:7px 12px;font-size:11px;font-weight:'+(isAct?'800':'600')+';color:'+(isAct?'var(--blue)':'var(--tx2)')+';border-bottom:'+(isAct?'3px solid var(--blue)':'3px solid transparent')+';background:'+(isAct?'var(--white)':'transparent')+';white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:4px;position:relative">';
-    html+='<span style="width:7px;height:7px;border-radius:50%;background:'+dot+';display:inline-block;flex-shrink:0"></span>';
-    html+=lbl;
-    if(hasAssign) html+='<span style="width:5px;height:5px;border-radius:50%;background:var(--green);display:inline-block;margin-left:1px"></span>';
-    html+='</div>';
-  }
-  html+='</div>';
+  /* No month tabs — view always starts from ccM */
 
   /* ── Header bar: propagation info + assign button ── */
   var slotLabel=ML[page]?ML[page].label:(MS[page]+' '+YEAR);
-  var isPast=(page<S.ccM);
-  var isCur=(page===S.ccM);
-  var isFut=(page>S.ccM);
+  var isPast=false; /* always start from CC month, never past */
+  var isCur=true;
+  var isFut=false;
   var prevLabel=page>0?(ML[page-1]?ML[page-1].short:MS[page-1]):'';
   var hasAssign=monthIsConfirmed(page);
 
@@ -4233,9 +4229,10 @@ function renderAssignmentsPage(){
     html+='<button id="asBigBtn" class="btn pri" style="margin-left:auto;padding:6px 18px;font-size:13px;font-weight:700;display:'+(totalSel>0?'inline-flex':'none')+'" onclick="asOpenAnyPicker()">&#128101; Assign workers'+(totalSel>0?' — '+totalSel+' cell'+(totalSel>1?'s':'')+' selected':'')+' </button>';
     html+='<button id="asClrBtn" class="btn" style="font-size:11px;display:'+(totalSel>0?'inline-flex':'none')+'" onclick="asClearAll()">✕ Clear</button>';
     html+='<span id="asHint" style="margin-left:auto;font-size:11px;color:var(--tx3);display:'+(totalSel>0?'none':'inline')+'">&#128161; Click cells to select, then <strong>Assign workers</strong> appears</span>';
-    if(hasAssign&&page>0){
-      html+='<button class="btn soft" style="font-size:10px" onclick="asResetFromPrev('+page+')" title="Re-copy from '+prevLabel+'">&#8635; Reset from '+prevLabel+'</button>';
-      html+='<button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red)" onclick="asClearMonth('+page+')">&#128465; Clear</button>';
+    /* Reset/Clear this CC month */
+    if(page>0){
+      html+='<button class="btn soft" style="font-size:10px" onclick="asResetFromPrev('+page+')" title="Re-copy assignments from previous month">&#8635; Reset from '+prevLabel+'</button>';
+      html+='<button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red)" onclick="asClearMonth('+page+')">&#128465; Clear CC month</button>';
     }
   }
   html+='</div>';
@@ -4243,7 +4240,7 @@ function renderAssignmentsPage(){
   /* ── The grid: for the selected month, show from page to end ──
      Columns: WBS | Budget | [page] | [page+1] | ... | [NM-1]
      The page column is highlighted as "current assignment month" */
-  var startCol=page; /* show from selected month onwards */
+  var startCol=page; /* from CC month to end of project */
 
   html+='<div class="as-grid" style="flex:1;overflow:auto;min-height:0">';
   html+='<table class="as-table"><thead><tr>';
@@ -4362,9 +4359,9 @@ function asWBSRow(wbs,ind,startCol,page){
 }
 
 function asSetPage(m){
+  /* Page is now driven by ccM — this function kept for compatibility */
   window._asPage=m;
   window._asSel={};
-  if(m>S.ccM) propagateFromPrevMonth(m);
   renderAssignmentsPage();
 }
 
