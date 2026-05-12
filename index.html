@@ -3182,10 +3182,12 @@ function wkMultiSave(){
   });
   window._multiStaged={};
   if(window._asSel&&wbsId) window._asSel[wbsId]={};
+  /* Sync all modified months to CC */
+  months.forEach(function(slotIdx){syncAssignmentsToCC(wbsId,slotIdx);});
   closeModal();
   saveS();
-  showToast(applied+' assignments saved','ok');
-  renderAssignmentsPage(); /* scroll preserved internally */
+  showToast(applied+' assignment'+(applied>1?'s':'')+' saved','ok');
+  renderAssignmentsPage();
 }
 /* ============================================================
    BACKUP EXPORT / IMPORT
@@ -3431,6 +3433,56 @@ function delSpec(key){
 }
 
 
+
+
+/* ── Forward propagation of assignments ──
+   When navigating to a future month with no assignments yet,
+   pre-fill from the previous month (filtering out expired workers) */
+function propagateFromPrevMonth(targetSlot){
+  if(targetSlot<=0) return;
+  var prevSlot=targetSlot-1;
+  var tYr=ML[targetSlot]?ML[targetSlot].year:YEAR;
+  var tMo=ML[targetSlot]!==undefined?ML[targetSlot].month:targetSlot;
+  var pYr=ML[prevSlot]?ML[prevSlot].year:YEAR;
+  var pMo=ML[prevSlot]!==undefined?ML[prevSlot].month:prevSlot;
+
+  /* Check if target month already has any assignments */
+  var hasAny=S.assignments.some(function(a){return a.month===tMo&&a.year===tYr;});
+  if(hasAny) return; /* already populated — don't overwrite */
+
+  /* Copy from previous month, filtering inactive workers */
+  var prevAssignments=S.assignments.filter(function(a){return a.month===pMo&&a.year===pYr;});
+  var added=0;
+  prevAssignments.forEach(function(a){
+    var wk=getWorker(a.workerId);
+    if(!wk) return;
+    /* Check worker still active in target month */
+    if(!workerActiveInMonth(wk,tMo,tYr)) return;
+    /* Check WBS still exists */
+    var wbsExists=S.wbs.some(function(w){return w.id===a.wbsId;});
+    if(!wbsExists) return;
+    /* Copy assignment */
+    S.assignments.push({
+      workerId:a.workerId,
+      wbsId:a.wbsId,
+      month:tMo,
+      year:tYr,
+      isForeman:a.isForeman
+    });
+    added++;
+  });
+  if(added>0){
+    saveS();
+    showToast('Pre-filled '+added+' assignment'+(added>1?'s':'')+' from '+(ML[prevSlot]?ML[prevSlot].label:'prev. month'),'ok');
+  }
+}
+
+/* Check if a future month slot has been "confirmed" (user visited/modified it) */
+function monthIsConfirmed(slotIdx){
+  var tYr=ML[slotIdx]?ML[slotIdx].year:YEAR;
+  var tMo=ML[slotIdx]!==undefined?ML[slotIdx].month:slotIdx;
+  return S.assignments.some(function(a){return a.month===tMo&&a.year===tYr;});
+}
 
 /* ── Sync assignments → CC reel/rad ──
    After assigning workers on a month, auto-update:
@@ -3743,15 +3795,22 @@ function renderAssignmentsPage(){
     return n+Object.keys(window._asSel[wid]||{}).filter(function(k){return window._asSel[wid][k];}).length;
   },0);
 
-  html+='<div style="display:flex;align-items:center;gap:10px;padding:6px 14px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--white)">';
+  var monthHasAsgn=monthIsConfirmed(page);
+  html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 14px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--white);flex-wrap:wrap">';
   html+='<strong style="font-size:13px">'+slotLabel+'</strong>';
   html+=modeLabel;
   if(!isPast){
     if(totalSel>0){
       html+='<button class="btn pri" style="margin-left:auto;padding:5px 14px;font-weight:700" onclick="asOpenAnyPicker()">&#128101; Assign workers ('+totalSel+' WBS selected)</button>';
-      html+='<button class="btn" style="font-size:11px" onclick="asClearAll()">✕ Clear</button>';
+      html+='<button class="btn" style="font-size:11px" onclick="asClearAll()">✕ Clear selection</button>';
     } else {
       html+='<span style="margin-left:auto;font-size:11px;color:var(--tx3)">Click a WBS row to select, then assign workers</span>';
+    }
+    if(isFut&&page>0){
+      html+='<button class="btn soft" style="font-size:10px" title="Re-copy assignments from previous month (replaces current month)" onclick="asResetFromPrev('+page+')">&#8635; Reset from '+(ML[page-1]?ML[page-1].short:'prev')+'</button>';
+    }
+    if(monthHasAsgn&&isFut){
+      html+='<button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red)" onclick="asClearMonth('+page+')">&#128465; Clear month</button>';
     }
   }
   html+='</div>';
@@ -3844,8 +3903,30 @@ function renderAssignmentsPage(){
 function asSetMonth(m){
   window._asMonth=m;
   window._asSel={};
+  /* If future month has no assignments yet, pre-fill from previous month */
+  if(m>S.ccM) propagateFromPrevMonth(m);
   renderAssignmentsPage();
 }
+
+function asResetFromPrev(slotIdx){
+  if(!confirm('Replace assignments for this month with a copy from the previous month?')) return;
+  /* Clear current month first */
+  var tYr=ML[slotIdx]?ML[slotIdx].year:YEAR;
+  var tMo=ML[slotIdx]!==undefined?ML[slotIdx].month:slotIdx;
+  S.assignments=S.assignments.filter(function(a){return !(a.month===tMo&&a.year===tYr);});
+  /* Re-propagate */
+  propagateFromPrevMonth(slotIdx);
+  renderAssignmentsPage();
+}
+
+function asClearMonth(slotIdx){
+  if(!confirm('Remove all assignments for this month?')) return;
+  var tYr=ML[slotIdx]?ML[slotIdx].year:YEAR;
+  var tMo=ML[slotIdx]!==undefined?ML[slotIdx].month:slotIdx;
+  S.assignments=S.assignments.filter(function(a){return !(a.month===tMo&&a.year===tYr);});
+  saveS(); showToast('Month cleared','ok'); renderAssignmentsPage();
+}
+
 
 function asToggleWBS(wbsId,m){
   if(!window._asSel) window._asSel={};
