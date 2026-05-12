@@ -3945,8 +3945,9 @@ function asWBSRow(wbs,ind,startCol,page){
     var borderL=isCurCol?'border-left:2px solid var(--blue);':'';
     var canClick=isPastCol?(!!(!S.asLocked)):true;
     h+='<td oncontextmenu="asCellContext(event,\''+wbs.id+'\','+m+')" style="padding:2px;'+(colBg?'background:'+colBg+';':'')+borderL+'">';
-    var dataAttrs=' data-wbs-id="'+wbs.id+'" data-slot="'+m+'"';
-    h+='<div class="'+cellCls+'"'+(tip?' data-tip="'+tip+'"':'')+dataAttrs+' style="cursor:'+(canClick?'pointer':'default')+'"'+(canClick?' onclick="asCellClick(this)"':'')+' >';
+    /* Use inline onclick with encoded wbsId to avoid dataset issues */
+    var onclickAttr=canClick?' onclick="asDirectPick(event,\''+wbs.id+'\','+m+')"':'';
+    h+='<div class="'+cellCls+'"'+(tip?' data-tip="'+tip+'"':'')+' style="cursor:'+(canClick?'pointer':'default')+'"'+onclickAttr+'>';
     h+=countHtml;
     h+='<div class="as-names">';
     for(var k=0;k<workers.length;k++){
@@ -3969,18 +3970,16 @@ function asSetPage(m){
 function asClearAll(){window._asSel={};renderAssignmentsPage();}
 function asClearSel(wbsId){if(window._asSel)window._asSel[wbsId]={};renderAssignmentsPage();}
 
-function asCellClick(el){
-  var wbsId=el.dataset.wbsId; var m=parseInt(el.dataset.slot);
-  if(!wbsId||isNaN(m)) return;
-  /* Direct open picker for this cell */
-  /* If Shift held: add to multi-selection instead */
+function asDirectPick(e,wbsId,m){
+  e.stopPropagation();
   if(window._asShift){
-    asToggleCell(wbsId,m,el);
-  } else {
-    /* Single click: directly open assignment picker */
-    window._asSel={};
+    /* Shift+click: toggle selection */
+    if(!window._asSel) window._asSel={};
     if(!window._asSel[wbsId]) window._asSel[wbsId]={};
-    window._asSel[wbsId][m]=true;
+    window._asSel[wbsId][m]=!window._asSel[wbsId][m];
+    renderAssignmentsPage();
+  } else {
+    /* Single click: open picker immediately */
     openWorkerPickerMulti(wbsId,[m]);
   }
 }
