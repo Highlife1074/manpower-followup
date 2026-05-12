@@ -709,10 +709,17 @@ function ccSlot(i){
 }
 function reelAtSlot(w,i){
   if(S.ccM<0||i>S.ccM) return 0;
-  var v=ccSlot(i).reel[w.id]; return v!==undefined?+v:0;
+  /* Manual override takes priority; otherwise use assignments (1 worker = 1 HM) */
+  var manual=ccSlot(i).reel[w.id];
+  if(manual!==undefined) return+manual;
+  return reelHMFromAssign(w.id,i);
 }
 function radAtSlot(w,i){
-  var v=ccSlot(i).rad[w.id]; return v!==undefined?+v:wbsBudAtSlot(w,i);
+  /* Manual override; otherwise use assignments on future months */
+  var manual=ccSlot(i).rad[w.id];
+  if(manual!==undefined) return+manual;
+  var assignHM=reelHMFromAssign(w.id,i);
+  return assignHM>0?assignHM:wbsBudAtSlot(w,i);
 }
 function reelCumSlot(w,page){
   var s=0;
@@ -1447,7 +1454,7 @@ function renderCCPage(page){
   banner+='<div class="cc-legend"><span class="cl-item"><span class="cl-dot" style="background:var(--tx3)"></span>Past (read-only)</span>';
   banner+='<span class="cl-item"><span class="cl-dot" style="background:var(--pur)"></span>CC Actual</span>';
   banner+='<span class="cl-item"><span class="cl-dot" style="background:var(--ora)"></span>ETC</span></div>';
-  banner+='<span style="font-size:11px;color:var(--tx3);margin-left:auto">Click <strong style="color:var(--pur)">✏ Actual/ETC</strong> cells to enter values</span>';
+  banner+='<span style="font-size:11px;color:var(--tx3);margin-left:auto"><em>Italic</em> = from assignments · <strong>Bold</strong> = manual override · Click to edit</span>';
   banner+='</div>';
 
   var tableHtml='<div class="tw"><table><thead>'+ccHead(page)+'</thead><tbody>'+ccBody(page)+'</tbody></table></div>';
@@ -1592,19 +1599,24 @@ function wbsCCRows(w,lv,page,isLast){
   for(var m=0;m<NM;m++){var ve=getBudEur(w,m);var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';h+='<td class="'+cls+' lk num" style="color:var(--tx3)">'+(ve?ve.toFixed(0):'')+'</td>';}
   h+='</tr>';
   /* Actual/ETC row - editable */
-  h+='<tr class="rre '+wbsCls+'"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpr" title="Click cells to enter actuals (CC month) or ETC (future months)">✏ Actual/ETC</span></td>';
+  h+='<tr class="rre '+wbsCls+'"><td class="p1" style="padding-left:'+(ind+12)+'px;border-right:2px solid var(--border2)"><span class="tp tpr" title="Values from assignments (italic) or manual entry (bold). Click to override.">✏ Actual/ETC</span><span style="font-size:8px;color:var(--tx3);margin-left:4px;font-style:italic">assign</span></td>';
   h+='<td class="p2" style="border-right:1px solid var(--border2)"></td><td class="p3" style="border-right:1px solid var(--border2)"></td><td class="p4" style="border-right:2px solid var(--border2)"></td>';
   h+='<td class="p5 num" style="color:var(--green);font-weight:700;border-right:2px solid var(--border2)">'+rc2.toFixed(1)+'</td><td style="border-right:2px solid var(--border2)"></td>';
   for(var m=0;m<NM;m++){
     var cv=ccVal(w,m,page); var cls=m<page?'col-past-td':m===page?'col-cur-td':'col-rad-td';
     var wid=w.id;
-    if(cv.type==='past')h+='<td class="'+cls+' num" style="color:var(--tx2)">'+f1(cv.v)+'</td>';
-    else if(cv.type==='cur'){
+    var hasManual=(m<=S.ccM)?(ccSlot(m).reel[w.id]!==undefined):(ccSlot(m).rad[w.id]!==undefined);
+    if(cv.type==='past'){
+      var pastStyle=hasManual?'color:var(--tx2)':'color:var(--tx2);font-style:italic';
+      h+='<td class="'+cls+' num" style="'+pastStyle+'">'+f1(cv.v)+'</td>';
+    } else if(cv.type==='cur'){
       var dv=cv.v?cv.v.toFixed(1):'0';
-      h+='<td class="'+cls+' edt num" style="color:var(--pur);font-weight:600" data-wid="'+wid+'" data-key="r'+m+'" data-type="cc-reel" data-m="'+m+'" onclick="ecCC(this,\''+wid+'\','+m+',\'reel\','+cv.v+')">'+dv+'</td>';
+      var curStyle=hasManual?'color:var(--pur);font-weight:800':'color:var(--pur);font-weight:400;font-style:italic';
+      h+='<td class="'+cls+' edt num" style="'+curStyle+'" data-wid="'+wid+'" data-key="r'+m+'" data-type="cc-reel" data-m="'+m+'" onclick="ecCC(this,\''+wid+'\','+m+',\'reel\','+cv.v+')">'+dv+'</td>';
     } else {
       var dv2=cv.v?cv.v.toFixed(1):'';
-      h+='<td class="'+cls+' edt num" style="color:var(--ora)" data-wid="'+wid+'" data-key="r'+m+'" data-type="cc-rad" data-m="'+m+'" onclick="ecCC(this,\''+wid+'\','+m+',\'rad\','+cv.v+')">'+dv2+'</td>';
+      var radStyle=hasManual?'color:var(--ora);font-weight:700':'color:var(--ora);font-style:italic';
+      h+='<td class="'+cls+' edt num" style="'+radStyle+'" data-wid="'+wid+'" data-key="r'+m+'" data-type="cc-rad" data-m="'+m+'" onclick="ecCC(this,\''+wid+'\','+m+',\'rad\','+cv.v+')">'+dv2+'</td>';
     }
   }
   h+='</tr>';
