@@ -3750,15 +3750,6 @@ window._asTab='assign';
 function renderAssignmentsPage(){
   var _scroll=saveScrollState();
   if(!window._asTab) window._asTab='assign';
-  if(window._asMonth===undefined) window._asMonth=Math.max(0,S.ccM>=0?S.ccM:0);
-  var page=window._asMonth;
-  if(page>=NM) page=NM-1;
-  window._asMonth=page;
-
-  var slotLabel=ML[page]?ML[page].label:(MS[page]+' '+YEAR);
-  var isPast=page<S.ccM;
-  var isCur=page===S.ccM;
-  var isFut=page>S.ccM;
 
   /* Sub-tabs */
   var html='<div style="display:flex;gap:6px;padding:6px 14px;border-bottom:1px solid var(--border2);background:var(--bg2);flex-shrink:0;align-items:center">';
@@ -3772,126 +3763,76 @@ function renderAssignmentsPage(){
     return;
   }
 
-  /* Month selector bar */
-  html+='<div style="display:flex;align-items:center;gap:0;padding:0;border-bottom:2px solid var(--border2);background:var(--bg2);flex-shrink:0;overflow-x:auto">';
-  for(var m=0;m<NM;m++){
-    var lbl=ML[m]?ML[m].short:MS[m];
-    var isAct=m===page;
-    var dot=m<S.ccM?'var(--tx3)':m===S.ccM?'var(--pur)':'var(--bm)';
-    var bg=isAct?'var(--blue)':'transparent';
-    var col=isAct?'#fff':'var(--tx2)';
-    html+='<div onclick="asSetMonth('+m+')" style="cursor:pointer;padding:7px 12px;font-size:11px;font-weight:'+(isAct?'800':'600')+';color:'+col+';background:'+bg+';border-bottom:'+(isAct?'3px solid var(--blue)':'3px solid transparent')+';white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:4px">';
-    html+='<span style="width:7px;height:7px;border-radius:50%;background:'+dot+';display:inline-block"></span>'+lbl;
-    html+='</div>';
+  /* Coverage mini-stats */
+  var totalCells=0,covered=0,uncovered=0,partial=0;
+  for(var wi=0;wi<S.wbs.length;wi++){
+    for(var m=0;m<NM;m++){
+      var bHM=bud(S.wbs[wi],m); if(bHM<=0) continue;
+      totalCells++;
+      var nW=getWBSWorkers(S.wbs[wi].id,m).length;
+      if(nW===0) uncovered++;
+      else if(nW<Math.ceil(bHM)) partial++;
+      else covered++;
+    }
   }
-  html+='</div>';
 
-  /* Header bar */
-  var modeLabel=isPast?'<span style="color:var(--tx3);font-size:11px">Past (read-only)</span>':
-                isCur?'<span style="color:var(--pur);font-size:11px;font-weight:700">● CC Month — actuals</span>':
-                       '<span style="color:var(--bm);font-size:11px;font-weight:700">◌ Future — ETC</span>';
-
+  /* Selection count */
   var totalSel=Object.keys(window._asSel||{}).reduce(function(n,wid){
     return n+Object.keys(window._asSel[wid]||{}).filter(function(k){return window._asSel[wid][k];}).length;
   },0);
 
-  var monthHasAsgn=monthIsConfirmed(page);
-  html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 14px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--white);flex-wrap:wrap">';
-  html+='<strong style="font-size:13px">'+slotLabel+'</strong>';
-  html+=modeLabel;
-  if(!isPast){
-    if(totalSel>0){
-      html+='<button class="btn pri" style="margin-left:auto;padding:5px 14px;font-weight:700" onclick="asOpenAnyPicker()">&#128101; Assign workers ('+totalSel+' WBS selected)</button>';
-      html+='<button class="btn" style="font-size:11px" onclick="asClearAll()">✕ Clear selection</button>';
-    } else {
-      html+='<span style="margin-left:auto;font-size:11px;color:var(--tx3)">Click a WBS row to select, then assign workers</span>';
-    }
-    if(isFut&&page>0){
-      html+='<button class="btn soft" style="font-size:10px" title="Re-copy assignments from previous month (replaces current month)" onclick="asResetFromPrev('+page+')">&#8635; Reset from '+(ML[page-1]?ML[page-1].short:'prev')+'</button>';
-    }
-    if(monthHasAsgn&&isFut){
-      html+='<button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red)" onclick="asClearMonth('+page+')">&#128465; Clear month</button>';
-    }
+  /* Top bar: stats + assign button */
+  html+='<div style="display:flex;gap:8px;padding:6px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;align-items:center;flex-wrap:wrap">';
+  html+='<span style="font-size:11px;color:var(--tx3)">'+totalCells+' WBS×months</span>';
+  html+='<span style="font-size:11px;background:var(--gl);color:var(--green);padding:2px 8px;border-radius:10px">✓ '+covered+'</span>';
+  html+='<span style="font-size:11px;background:#fff7e0;color:var(--amber);padding:2px 8px;border-radius:10px">▲ '+partial+'</span>';
+  html+='<span style="font-size:11px;background:var(--rl);color:var(--red);padding:2px 8px;border-radius:10px">✗ '+uncovered+'</span>';
+  if(totalSel>0){
+    html+='<button class="btn pri" style="margin-left:auto;padding:6px 18px;font-size:13px;font-weight:700" onclick="asOpenAnyPicker()">&#128101; Assign workers → '+totalSel+' cell'+(totalSel>1?'s':'')+' selected</button>';
+    html+='<button class="btn" style="font-size:11px" onclick="asClearAll()">✕ Clear</button>';
+  } else {
+    html+='<span style="margin-left:auto;font-size:11px;color:var(--tx3)">Click cells to select, then Assign workers</span>';
   }
   html+='</div>';
 
-  /* WBS table for this month */
-  html+='<div class="as-grid" style="flex:1;overflow:auto;min-height:0"><table style="border-collapse:collapse;width:100%">';
-  html+='<thead><tr style="background:var(--bg2);position:sticky;top:0;z-index:10">';
-  html+='<th style="text-align:left;padding:6px 14px;font-size:10px;font-weight:700;color:var(--tx3);border-bottom:2px solid var(--border2);min-width:280px">WBS</th>';
-  html+='<th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--tx3);border-bottom:2px solid var(--border2);text-align:right;min-width:70px">Budget HM</th>';
-  html+='<th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--tx3);border-bottom:2px solid var(--border2);text-align:center;min-width:200px">Assigned workers</th>';
-  html+='<th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--tx3);border-bottom:2px solid var(--border2);text-align:right;min-width:70px">'+(isFut?'RAD HM':'Actual HM')+'</th>';
-  if(!isPast) html+='<th style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--tx3);border-bottom:2px solid var(--border2);width:40px"></th>';
+  /* Grid: WBS rows × month columns */
+  html+='<div class="as-grid" style="flex:1;overflow:auto;min-height:0">';
+  html+='<table class="as-table"><thead><tr>';
+  html+='<th class="ap1" style="position:sticky;left:0;z-index:25;background:var(--bg2)">WBS</th>';
+  html+='<th class="ap2" style="position:sticky;left:200px;z-index:25;background:var(--bg2);min-width:60px">Budget</th>';
+  for(var m=0;m<NM;m++){
+    var ml=ML[m]?ML[m].short:MS[m];
+    var isCCM=(m===S.ccM);
+    var thStyle='min-width:80px;text-align:center;cursor:pointer;'+(isCCM?'background:rgba(78,69,128,.1);':'');
+    html+='<th style="'+thStyle+'" onclick="asSelectCol('+m+')">'+ml+(isCCM?'<br><span style="font-size:8px;color:var(--pur)">CC</span>':'')+'</th>';
+  }
   html+='</tr></thead><tbody>';
 
+  /* Groups + WBS */
   for(var gi=0;gi<S.groups.length;gi++){
     var g=S.groups[gi];
-    /* Group header */
-    html+='<tr style="background:#F05A00"><td colspan="'+(isPast?4:5)+'" style="padding:5px 14px;font-size:11px;font-weight:800;color:#1a1a1a;letter-spacing:.05em">'+g.name.toUpperCase()+'</td></tr>';
+    if(gi>0) html+='<tr class="group-sep-row"><td colspan="'+(2+NM)+'"></td></tr>';
+    /* Group row */
+    html+='<tr class="rgroup"><td class="ap1" colspan="'+(2+NM)+'" style="position:sticky;left:0">';
+    html+='<span class="tog" onclick="toggleGroup(\''+g.id+'\')"><span>'+(g.col?'▶':'▼')+'</span></span> ';
+    html+='<span style="font-weight:800;font-size:12px">'+g.name.toUpperCase()+'</span></td></tr>';
     if(g.col) continue;
 
-    var allWBS=[];
     /* Direct WBS */
-    S.wbs.filter(function(w){return w.parentId===g.id;}).forEach(function(w){allWBS.push({w:w,indent:14});});
-    /* Subgroup WBS */
+    var directWBS=S.wbs.filter(function(w){return w.parentId===g.id;});
+    directWBS.forEach(function(wbs){html+=asWBSRow(wbs,14);});
+
+    /* Subgroups */
     for(var si=0;si<g.sub.length;si++){
       var sg=g.sub[si];
       var sgWBS=S.wbs.filter(function(w){return w.parentId===sg.id;});
       if(sgWBS.length===0) continue;
-      html+='<tr style="background:#e2ddd4"><td colspan="'+(isPast?4:5)+'" style="padding:4px 24px;font-size:12px;font-weight:800;color:#4a3a80">◆ '+sg.name+'</td></tr>';
-      if(!sg.col) sgWBS.forEach(function(w){allWBS.push({w:w,indent:32});});
-    }
-
-    for(var wi=0;wi<allWBS.length;wi++){
-      var wbs=allWBS[wi].w; var ind=allWBS[wi].indent;
-      var budHM=bud(wbs,page);
-      var workers=getWBSWorkers(wbs.id,page);
-      var nW=workers.length;
-      var isSel=window._asSel&&window._asSel[wbs.id]&&window._asSel[wbs.id][page];
-
-      /* Reel or RAD */
-      var hmVal=isFut?radAtSlot(wbs,page):reelAtSlot(wbs,page);
-      /* Auto-compute HM from assignments (1 worker = 1 HM for the month) */
-      var autoHM=+(nW*1).toFixed(1); /* 1 worker = 1 MM */
-
-      var rowBg=isSel?'rgba(61,90,128,.08)':'var(--white)';
-      var borderL=isSel?'3px solid var(--blue)':'3px solid transparent';
-
-      html+='<tr style="border-bottom:1px solid var(--border);background:'+rowBg+';border-left:'+borderL+'">';
-      /* WBS name */
-      html+='<td style="padding:7px '+ind+'px 7px '+ind+'px;font-size:12px;font-weight:600" '+(isPast?'':' onclick="asToggleWBS(\''+wbs.id+'\','+page+')" style="cursor:pointer;padding:7px '+ind+'px"')+' >';
-      if(wbs.code) html+='<span class="codb" style="font-size:9px">'+wbs.code+'</span> ';
-      html+=wbs.name+'</td>';
-      /* Budget */
-      var budColor=budHM>0?(nW>=Math.ceil(budHM)?'var(--green)':nW>0?'var(--amber)':'var(--red)'):'var(--tx3)';
-      html+='<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:11px;color:'+budColor+'">'+( budHM?budHM.toFixed(1):'—')+'</td>';
-      /* Workers */
-      html+='<td style="padding:4px 8px">';
-      if(workers.length){
-        html+='<div style="display:flex;flex-wrap:wrap;gap:3px">';
-        for(var k=0;k<workers.length;k++){
-          var wk2=workers[k];
-          var isExp=!workerActiveInMonth(wk2,ML[page]?ML[page].month:page,ML[page]?ML[page].year:YEAR);
-          var fmA=getForeman(wbs.id,page); var isFm=fmA&&fmA.workerId===wk2.id;
-          var chipStyle='font-size:10px;font-weight:600;padding:2px 8px;border-radius:12px;display:inline-block;cursor:pointer;';
-          chipStyle+=isFm?'background:var(--ambl);color:var(--amber);border:1px solid var(--amber);':
-                     isExp?'background:var(--rl);color:var(--red);border:1px solid var(--red);':
-                           'background:var(--gl);color:var(--green);border:1px solid var(--gm);';
-          html+='<span style="'+chipStyle+'" data-wid="'+wk2.id+'" data-wbs="'+wbs.id+'" data-m="'+page+'" onclick="showChipPop(event,this)">'+(isFm?'★ ':'')+wk2.name.split(' ')[0]+(wk2.workerId?' #'+wk2.workerId:'')+( isExp?' ⚠':'')+'</span>';
-        }
-        html+='</div>';
-      } else if(!isPast){
-        html+='<span style="font-size:10px;color:var(--border2)">No workers assigned</span>';
-      }
-      html+='</td>';
-      /* HM */
-      html+='<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:11px;color:'+(isFut?'var(--ora)':'var(--pur)')+'">'+(hmVal?hmVal.toFixed(1):autoHM>0?'~'+autoHM.toFixed(1):'—')+'</td>';
-      /* Action */
-      if(!isPast){
-        html+='<td style="padding:4px 6px;text-align:center"><button class="btn" style="padding:2px 8px;font-size:10px" onclick="asToggleWBS(\''+wbs.id+'\','+page+')">'+( isSel?'✓':'+ select')+'</button></td>';
-      }
-      html+='</tr>';
+      html+='<tr class="sg-sep-row"><td colspan="'+(2+NM)+'"></td></tr>';
+      html+='<tr class="rsg"><td class="ap1" colspan="'+(2+NM)+'" style="position:sticky;left:0">';
+      html+='<span class="tog" onclick="toggleSG(\''+sg.id+'\')">▼</span> ';
+      html+='<span style="font-size:13px;font-weight:800;color:#4a3a80">◆ '+sg.name+'</span></td></tr>';
+      if(sg.col) continue;
+      sgWBS.forEach(function(wbs){html+=asWBSRow(wbs,32);});
     }
   }
 
@@ -3899,6 +3840,65 @@ function renderAssignmentsPage(){
   document.getElementById('pageContent').innerHTML=html;
   setTimeout(function(){restoreScrollState(_scroll);},0);
 }
+
+function asWBSRow(wbs,ind){
+  var budTotal=wbsTotalBudget(wbs);
+  var wbsSel=window._asSel&&window._asSel[wbs.id]?window._asSel[wbs.id]:{};
+  var h='<tr>';
+  h+='<td class="ap1" style="position:sticky;left:0;background:var(--white);z-index:10;padding-left:'+ind+'px;font-weight:600;font-size:11px">';
+  if(wbs.code) h+='<span class="codb" style="font-size:9px">'+wbs.code+'</span> ';
+  h+=wbs.name+'</td>';
+  h+='<td class="ap2" style="position:sticky;left:200px;background:var(--white);z-index:10;font-family:var(--mono);font-size:11px;color:var(--blue);text-align:right">'+(budTotal?budTotal.toFixed(1):'')+'</td>';
+
+  for(var m=0;m<NM;m++){
+    var budHM=bud(wbs,m);
+    var workers=getWBSWorkers(wbs.id,m);
+    var nW=workers.length;
+    var isSel=wbsSel[m]||false;
+    var isCCM=(m===S.ccM);
+    var cellCls='as-cell'+(isSel?' as-cell-sel':'');
+    if(budHM>0){
+      if(nW===0) cellCls+=' as-alert-red';
+      else if(nW<Math.ceil(budHM)) cellCls+=' as-alert-ora';
+      else cellCls+=' as-alert-ok';
+    }
+    /* Tooltip */
+    var tipLines=[];
+    if(budHM>0) tipLines.push('Budget: '+budHM.toFixed(1)+' HM / '+Math.ceil(budHM)+'w');
+    var fmA=getForeman(wbs.id,m);
+    for(var k=0;k<workers.length;k++){
+      var wk2=workers[k];
+      var isFmWk2=fmA&&fmA.workerId===wk2.id;
+      var isExp=!workerActiveInMonth(wk2,ML[m]?ML[m].month:m,ML[m]?ML[m].year:YEAR);
+      tipLines.push((isFmWk2?'★ ':'')+wk2.name+(wk2.workerId?' #'+wk2.workerId:'')+(isExp?' ⚠':''));
+    }
+    var tip=tipLines.join('&#10;');
+    /* Count display */
+    var need=budHM>0?Math.ceil(budHM):0;
+    var countHtml='';
+    if(budHM>0){
+      countHtml='<div class="as-count"><span class="'+(nW>=need?'n-ass':'n-miss')+'">'+nW+'</span><span class="sep">/</span><span>'+need+'</span></div>';
+    } else if(nW>0){
+      countHtml='<div class="as-count"><span class="n-ass">'+nW+'</span></div>';
+    }
+    var cellBg=isCCM?'rgba(78,69,128,.06)':'';
+    h+='<td oncontextmenu="asCellContext(event,\''+wbs.id+'\','+m+')" style="padding:2px;'+(cellBg?'background:'+cellBg:'')+'"><div class="'+cellCls+'"'+(tip?' data-tip="'+tip+'"':'')+' style="cursor:pointer" onclick="asToggleCell(\''+wbs.id+'\','+m+',this)">';
+    h+=countHtml;
+    /* Hidden chips for popover */
+    h+='<div class="as-names">';
+    for(var k=0;k<workers.length;k++){
+      var wk3=workers[k];
+      h+='<span class="as-chip" data-wid="'+wk3.id+'" data-wbs="'+wbs.id+'" data-m="'+m+'" onclick="event.stopPropagation();showChipPop(event,this)" style="display:none">'+wk3.name+'</span>';
+    }
+    h+='</div>';
+    h+='</div></td>';
+  }
+  h+='</tr>';
+
+  /* Propagation hint row if this WBS has assignments that differ month to month */
+  return h;
+}
+
 
 function asSetMonth(m){
   window._asMonth=m;
