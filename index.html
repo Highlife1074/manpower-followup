@@ -941,6 +941,7 @@ function filterW(pid){return S.wbs.filter(function(w){return w.parentId===pid;})
    VIEW STATE
    ============================================================ */
 var VIEW='budget';
+var _botCollapsed={inv:false,bot:false};
 
 
 /* Track shift key for multi-select in assignments */
@@ -1036,7 +1037,7 @@ function renderTabBar(){
   h+='<div class="tab tab-as'+(VIEW==="assignments"?" active":"")+'" onclick="goAssign()">&#128203; Assignments</div>';
   document.getElementById('tabBar').innerHTML=h;
 }
-function switchTab(v){console.log('switchTab called:',v);VIEW=v;render();}
+function switchTab(v){VIEW=v;render();}
 function goWorkers(){VIEW="workers";render();}
 function goAssign(){VIEW="assignments";render();}
 function triggerWBSImport2_old(){var el=document.getElementById("wbsImportInput");if(el){el.value="";el.click();}}
@@ -1334,7 +1335,6 @@ function wbsBudRows(w,lv,locked,isLastInGroup){
    CC PAGE
    ============================================================ */
 function renderCCPage(page){
-  try {
   var tB=0,tRC=0,tETC=0;
   for(var i=0;i<S.wbs.length;i++){tB+=addBudget(S.wbs[i]);tRC+=reelCum(S.wbs[i],page);for(var m=page+1;m<NM;m++)tETC+=rad(S.wbs[i],m);}
   tB=+tB.toFixed(1);tRC=+tRC.toFixed(1);tETC=+tETC.toFixed(1);
@@ -1364,13 +1364,7 @@ function renderCCPage(page){
   var invHtml=renderInvSection(page);
   var botHtml=renderBotRecap(page);
 
-  var fullHTML=banner+tableHtml+invHtml+botHtml;
-  console.log('CC page HTML length:', fullHTML.length);
-  document.getElementById('pageContent').innerHTML=fullHTML;
-  } catch(e) {
-    console.error('renderCCPage error:', e);
-    document.getElementById('pageContent').innerHTML='<div style="padding:20px;color:red"><strong>CC render error:</strong> '+e.message+'<br><pre>'+e.stack+'</pre></div>';
-  }
+  document.getElementById('pageContent').innerHTML=banner+tableHtml+invHtml+botHtml;
 }
 
 function ccHead(page){
