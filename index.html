@@ -944,7 +944,10 @@ var VIEW='budget';
 
 
 /* Track shift key for multi-select in assignments */
-document.addEventListener('keydown',function(e){if(e.key==='Shift') window._asShift=true;});
+document.addEventListener('keydown',function(e){
+  if(e.key==='Shift') window._asShift=true;
+  if(e.key==='Escape'&&VIEW==='assignments'){asClearAll();}
+});
 document.addEventListener('keyup',function(e){if(e.key==='Shift') window._asShift=false;});
 function setCCMonth(val){
   var m=parseInt(val);
@@ -3067,7 +3070,16 @@ function openWorkerPickerMulti(wbsId,months){
     h+='<div class="wk-pick-fm-wrap"><input type="checkbox" id="wpFm" style="width:15px;height:15px;accent-color:var(--amber)"><label for="wpFm" style="cursor:pointer">&#9733; Foreman</label></div>';
     h+='</div>';
 
-    h+='<div class="wk-pick-body"><div class="wk-grid" id="wkPickGrid">';
+    /* Count assigned vs available for section hint */
+    var nAssignedHere=workers.filter(function(wk){
+      return months.some(function(m){var a=getAssignmentSlot(wk.id,m);return a&&a.wbsId===wbsId;});
+    }).length;
+    h+='<div class="wk-pick-body">';
+    if(nAssignedHere>0){
+      h+='<div style="font-size:11px;padding:6px 12px;background:var(--gl);color:var(--green);font-weight:600;border-bottom:1px solid var(--border)">';
+      h+='✓ '+nAssignedHere+' worker'+(nAssignedHere>1?'s':'')+' currently assigned — click to remove · Click available workers to add</div>';
+    }
+    h+='<div class="wk-grid" id="wkPickGrid">';
 
     var workers=S.workers.slice();
     workers.sort(function(a,b){
@@ -3122,17 +3134,28 @@ function openWorkerPickerMulti(wbsId,months){
         cardCls+=' wc-remove';
         statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">Will be removed</span>';
         clickable=true;
+      } else if(assignedHereMonths.length===months.length){
+        /* All selected months already assigned here → show as assigned, click to remove */
+        cardCls+=' wc-staged';
+        statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">✓ Assigned (all '+months.length+'m) · click to remove</span>';
+        clickable=true;
+      } else if(assignedHereMonths.length>0){
+        /* Partially assigned here */
+        cardCls+=' wc-staged';
+        statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">Assigned '+assignedHereMonths.length+'/'+months.length+'m · click to remove</span>';
+        clickable=true;
       } else if(freeMonths.length===months.length){
         cardCls+=' available';
-        statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">Free all '+months.length+' months</span>';
+        statusHtml='<span class="wc-status" style="background:var(--gl);color:var(--green)">Available all '+months.length+' months</span>';
         clickable=true;
-      } else if(freeMonths.length>0||assignedHereMonths.length>0){
+      } else if(freeMonths.length>0){
         cardCls+=' available';
-        statusHtml='<span class="wc-status" style="background:#fff7e0;color:var(--amber)">Free '+freeMonths.length+'/'+(months.length)+'m</span>';
+        statusHtml='<span class="wc-status" style="background:#fff7e0;color:var(--amber)">Available '+freeMonths.length+'/'+months.length+' months</span>';
         clickable=true;
       } else {
         cardCls+=' wc-elsewhere';
-        statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">Busy all months</span>';
+        statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">Busy all months (other WBS)</span>';
+        clickable=true; /* allow reassignment */
       }
 
       h+='<div class="'+cardCls+'" '+(clickable?'data-wid="'+wk.id+'" onclick="wkMultiToggle(this)"':'')+' >';
@@ -3174,9 +3197,26 @@ function openWorkerPickerMulti(wbsId,months){
 function wkMultiToggle(el){
   var wid=el.dataset.wid;
   var staged=window._multiStaged;
+  var months=window._multiMonths||[];
+  var wbsId=window._multiWbsId;
   var isFm=document.getElementById('wpFm')&&document.getElementById('wpFm').checked;
-  if(staged[wid]) delete staged[wid];
-  else staged[wid]=isFm?'add-foreman':'add';
+
+  if(staged[wid]){
+    /* Already staged — cycle: add→remove→nothing, or remove→nothing */
+    if(staged[wid]==='remove') delete staged[wid];
+    else staged[wid]='remove';
+  } else {
+    /* Not staged — check if currently assigned here */
+    var assignedHere=months.some(function(m){
+      var a=getAssignmentSlot(wid,m);
+      return a&&a.wbsId===wbsId;
+    });
+    if(assignedHere){
+      staged[wid]='remove'; /* assigned → stage for removal */
+    } else {
+      staged[wid]=isFm?'add-foreman':'add'; /* free → stage for assignment */
+    }
+  }
   window._multiRebuild(document.getElementById('wkPickFilter')?document.getElementById('wkPickFilter').value:'');
 }
 
@@ -3192,33 +3232,35 @@ function wkMultiSave(){
   var staged=window._multiStaged||{};
   var months=window._multiMonths||[];
   var wbsId=window._multiWbsId;
-  var applied=0;
+  var added=0,removed=0;
   Object.keys(staged).forEach(function(wid){
     var action=staged[wid];
     months.forEach(function(slotIdx){
       var rYr=ML[slotIdx]?ML[slotIdx].year:YEAR;
       var rMo=ML[slotIdx]!==undefined?ML[slotIdx].month:slotIdx;
-      /* Remove existing for this worker+month if any */
-      S.assignments=S.assignments.filter(function(a){
-        return !(a.workerId===wid&&a.month===rMo&&a.year===rYr&&a.wbsId===wbsId);
-      });
-      if(action==='add'||action==='add-foreman'){
-        /* Only assign if worker is free this month */
-        var asgn=getAssignmentSlot(wid,slotIdx);
-        if(!asgn){
-          assignWorker(wid,wbsId,slotIdx,action==='add-foreman');
-          applied++;
-        }
+      if(action==='remove'){
+        var before=S.assignments.length;
+        S.assignments=S.assignments.filter(function(a){
+          return !(a.workerId===wid&&a.month===rMo&&a.year===rYr&&a.wbsId===wbsId);
+        });
+        if(S.assignments.length<before) removed++;
+      } else if(action==='add'||action==='add-foreman'){
+        /* Remove any existing for this worker+month */
+        S.assignments=S.assignments.filter(function(a){
+          return !(a.workerId===wid&&a.month===rMo&&a.year===rYr);
+        });
+        assignWorker(wid,wbsId,slotIdx,action==='add-foreman');
+        added++;
       }
     });
   });
   window._multiStaged={};
   if(window._asSel&&wbsId) window._asSel[wbsId]={};
-  /* Sync all modified months to CC */
   months.forEach(function(slotIdx){syncAssignmentsToCC(wbsId,slotIdx);});
   closeModal();
   saveS();
-  showToast(applied+' assignment'+(applied>1?'s':'')+' saved','ok');
+  var msg=[]; if(added) msg.push('+'+added+' assigned'); if(removed) msg.push('-'+removed+' removed');
+  showToast(msg.join(', ')||'No changes','ok');
   renderAssignmentsPage();
 }
 /* ============================================================
@@ -3969,7 +4011,7 @@ function asWBSRow(wbs,ind,startCol,page){
     h+='<td oncontextmenu="asCellContext(event,\''+wbs.id+'\','+m+')" style="padding:2px;'+(colBg?'background:'+colBg+';':'')+borderL+'">';
     /* Use inline onclick with encoded wbsId to avoid dataset issues */
     var onclickAttr=canClick?' onclick="asDirectPick(event,\''+wbs.id+'\','+m+')"':'';
-    h+='<div class="'+cellCls+'"'+(tip?' data-tip="'+tip+'"':'')+' style="cursor:'+(canClick?'pointer':'default')+'"'+onclickAttr+'>';
+    h+='<div class="'+cellCls+'" data-cell-wbs="'+wbs.id+'" data-cell-m="'+m+'"'+(tip?' data-tip="'+tip+'"':'')+' style="cursor:'+(canClick?'pointer':'default')+'"'+onclickAttr+'>';
     h+=countHtml;
     h+='<div class="as-names">';
     for(var k=0;k<workers.length;k++){
@@ -3989,21 +4031,40 @@ function asSetPage(m){
   renderAssignmentsPage();
 }
 
-function asClearAll(){window._asSel={};renderAssignmentsPage();}
+function asClearAll(){
+  window._asSel={};
+  document.querySelectorAll('.as-cell-sel').forEach(function(el){el.classList.remove('as-cell-sel');});
+  asUpdateTopBar();
+}
 function asClearSel(wbsId){if(window._asSel)window._asSel[wbsId]={};renderAssignmentsPage();}
 
 function asDirectPick(e,wbsId,m){
   e.stopPropagation();
-  if(window._asShift){
-    /* Shift+click: toggle selection */
-    if(!window._asSel) window._asSel={};
-    if(!window._asSel[wbsId]) window._asSel[wbsId]={};
-    window._asSel[wbsId][m]=!window._asSel[wbsId][m];
-    renderAssignmentsPage();
-  } else {
-    /* Single click: open picker immediately */
-    openWorkerPickerMulti(wbsId,[m]);
+  /* Single click = toggle cell selection */
+  if(!window._asSel) window._asSel={};
+  if(!window._asSel[wbsId]) window._asSel[wbsId]={};
+  window._asSel[wbsId][m]=!window._asSel[wbsId][m];
+  /* Visual feedback in-place */
+  var divs=document.querySelectorAll('[data-cell-wbs="'+wbsId+'"][data-cell-m="'+m+'"]');
+  divs.forEach(function(d){d.classList.toggle('as-cell-sel',!!window._asSel[wbsId][m]);});
+  /* Update assign button without full re-render */
+  asUpdateTopBar();
+}
+
+function asUpdateTopBar(){
+  var total=0;
+  Object.keys(window._asSel||{}).forEach(function(wid){
+    Object.keys(window._asSel[wid]||{}).forEach(function(k){if(window._asSel[wid][k])total++;});
+  });
+  var btn=document.getElementById('asBigBtn');
+  var hint=document.getElementById('asHint');
+  if(btn){
+    btn.style.display=total>0?'inline-flex':'none';
+    btn.textContent='\u{1F465} Assign workers — '+total+' cell'+(total>1?'s':'')+' selected';
   }
+  if(hint) hint.style.display=total>0?'none':'inline';
+  var clrBtn=document.getElementById('asClrBtn');
+  if(clrBtn) clrBtn.style.display=total>0?'inline-flex':'none';
 }
 function asToggleCell(wbsId,m,el){
   if(!window._asSel) window._asSel={};
