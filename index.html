@@ -3744,14 +3744,21 @@ function deleteWorker(id){
 /* ============================================================
    ASSIGNMENTS PAGE — click cells to select, big Assign button
    ============================================================ */
-window._asSel={};   /* {wbsId: {slotIdx: true}} */
+window._asSel={};    /* {wbsId: {slotIdx: true}} */
+window._asPage=0;    /* current month tab in assignments */
 window._asTab='assign';
 
+/* ============================================================
+   ASSIGNMENTS PAGE — monthly tabs, each drives CC
+   ============================================================ */
 function renderAssignmentsPage(){
   var _scroll=saveScrollState();
   if(!window._asTab) window._asTab='assign';
+  if(window._asPage===undefined||window._asPage<0) window._asPage=Math.max(0,S.ccM>=0?S.ccM:0);
+  if(window._asPage>=NM) window._asPage=NM-1;
+  var page=window._asPage;
 
-  /* Sub-tabs */
+  /* Sub-tabs: Assignments / Overview */
   var html='<div style="display:flex;gap:6px;padding:6px 14px;border-bottom:1px solid var(--border2);background:var(--bg2);flex-shrink:0;align-items:center">';
   html+='<button class="btn'+(window._asTab==='assign'?' pri':'')+'" onclick="setAsTab(\'assign\')">&#128203; Assignments</button>';
   html+='<button class="btn'+(window._asTab==='overview'?' pri':'')+'" onclick="setAsTab(\'overview\')">&#128200; Coverage Overview</button>';
@@ -3763,85 +3770,103 @@ function renderAssignmentsPage(){
     return;
   }
 
-  /* Coverage mini-stats */
-  var totalCells=0,covered=0,uncovered=0,partial=0;
-  for(var wi=0;wi<S.wbs.length;wi++){
-    for(var m=0;m<NM;m++){
-      var bHM=bud(S.wbs[wi],m); if(bHM<=0) continue;
-      totalCells++;
-      var nW=getWBSWorkers(S.wbs[wi].id,m).length;
-      if(nW===0) uncovered++;
-      else if(nW<Math.ceil(bHM)) partial++;
-      else covered++;
-    }
+  /* ── Month tabs bar ── */
+  html+='<div style="display:flex;align-items:stretch;background:var(--bg2);border-bottom:2px solid var(--border2);flex-shrink:0;overflow-x:auto">';
+  for(var m=0;m<NM;m++){
+    var lbl=ML[m]?ML[m].short:MS[m];
+    var isAct=(m===page);
+    var dot=m<S.ccM?'#a09890':m===S.ccM?'var(--pur)':'var(--bm)';
+    var hasAssign=monthIsConfirmed(m);
+    html+='<div onclick="asSetPage('+m+')" style="cursor:pointer;padding:7px 12px;font-size:11px;font-weight:'+(isAct?'800':'600')+';color:'+(isAct?'var(--blue)':'var(--tx2)')+';border-bottom:'+(isAct?'3px solid var(--blue)':'3px solid transparent')+';background:'+(isAct?'var(--white)':'transparent')+';white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:4px;position:relative">';
+    html+='<span style="width:7px;height:7px;border-radius:50%;background:'+dot+';display:inline-block;flex-shrink:0"></span>';
+    html+=lbl;
+    if(hasAssign) html+='<span style="width:5px;height:5px;border-radius:50%;background:var(--green);display:inline-block;margin-left:1px"></span>';
+    html+='</div>';
   }
+  html+='</div>';
 
-  /* Selection count */
+  /* ── Header bar: propagation info + assign button ── */
+  var slotLabel=ML[page]?ML[page].label:(MS[page]+' '+YEAR);
+  var isPast=(page<S.ccM);
+  var isCur=(page===S.ccM);
+  var isFut=(page>S.ccM);
+  var prevLabel=page>0?(ML[page-1]?ML[page-1].short:MS[page-1]):'';
+  var hasAssign=monthIsConfirmed(page);
+
   var totalSel=Object.keys(window._asSel||{}).reduce(function(n,wid){
     return n+Object.keys(window._asSel[wid]||{}).filter(function(k){return window._asSel[wid][k];}).length;
   },0);
 
-  /* Top bar: stats + assign button */
-  html+='<div style="display:flex;gap:8px;padding:6px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;align-items:center;flex-wrap:wrap">';
-  html+='<span style="font-size:11px;color:var(--tx3)">'+totalCells+' WBS×months</span>';
-  html+='<span style="font-size:11px;background:var(--gl);color:var(--green);padding:2px 8px;border-radius:10px">✓ '+covered+'</span>';
-  html+='<span style="font-size:11px;background:#fff7e0;color:var(--amber);padding:2px 8px;border-radius:10px">▲ '+partial+'</span>';
-  html+='<span style="font-size:11px;background:var(--rl);color:var(--red);padding:2px 8px;border-radius:10px">✗ '+uncovered+'</span>';
-  if(totalSel>0){
-    html+='<button class="btn pri" style="margin-left:auto;padding:6px 18px;font-size:13px;font-weight:700" onclick="asOpenAnyPicker()">&#128101; Assign workers → '+totalSel+' cell'+(totalSel>1?'s':'')+' selected</button>';
-    html+='<button class="btn" style="font-size:11px" onclick="asClearAll()">✕ Clear</button>';
-  } else {
-    html+='<span style="margin-left:auto;font-size:11px;color:var(--tx3)">Click cells to select, then Assign workers</span>';
+  html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 14px;background:var(--white);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap">';
+  html+='<strong style="font-size:13px">'+slotLabel+'</strong>';
+  if(isPast) html+='<span style="font-size:11px;color:var(--tx3);background:var(--bg2);padding:2px 8px;border-radius:10px">Past — read only</span>';
+  else if(isCur) html+='<span style="font-size:11px;color:var(--pur);font-weight:700">● CC Month</span>';
+  else html+='<span style="font-size:11px;color:var(--bm);font-weight:600">◌ Future</span>';
+  if(!isPast&&page>0&&!hasAssign) html+='<span style="font-size:10px;color:var(--green);background:var(--gl);padding:2px 8px;border-radius:10px">↓ Pre-filled from '+prevLabel+'</span>';
+
+  if(!isPast){
+    if(totalSel>0){
+      html+='<button class="btn pri" style="margin-left:auto;padding:5px 14px;font-weight:700" onclick="asOpenAnyPicker()">&#128101; Assign workers ('+totalSel+' selected)</button>';
+      html+='<button class="btn" style="font-size:11px" onclick="asClearAll()">✕ Clear sel.</button>';
+    } else {
+      html+='<span style="margin-left:auto;font-size:11px;color:var(--tx3)">Click cells to select → Assign workers</span>';
+    }
+    if(hasAssign&&page>0){
+      html+='<button class="btn soft" style="font-size:10px" onclick="asResetFromPrev('+page+')" title="Re-copy from '+prevLabel+'">&#8635; Reset from '+prevLabel+'</button>';
+      html+='<button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red)" onclick="asClearMonth('+page+')">&#128465; Clear</button>';
+    }
   }
   html+='</div>';
 
-  /* Grid: WBS rows × month columns */
+  /* ── The grid: for the selected month, show from page to end ──
+     Columns: WBS | Budget | [page] | [page+1] | ... | [NM-1]
+     The page column is highlighted as "current assignment month" */
+  var startCol=page; /* show from selected month onwards */
+
   html+='<div class="as-grid" style="flex:1;overflow:auto;min-height:0">';
   html+='<table class="as-table"><thead><tr>';
   html+='<th class="ap1" style="position:sticky;left:0;z-index:25;background:var(--bg2)">WBS</th>';
   html+='<th class="ap2" style="position:sticky;left:200px;z-index:25;background:var(--bg2);min-width:60px">Budget</th>';
-  for(var m=0;m<NM;m++){
-    var ml=ML[m]?ML[m].short:MS[m];
-    var isCCM=(m===S.ccM);
-    var thStyle='min-width:80px;text-align:center;cursor:pointer;'+(isCCM?'background:rgba(78,69,128,.1);':'');
-    html+='<th style="'+thStyle+'" onclick="asSelectCol('+m+')">'+ml+(isCCM?'<br><span style="font-size:8px;color:var(--pur)">CC</span>':'')+'</th>';
+  for(var m=startCol;m<NM;m++){
+    var ml2=ML[m]?ML[m].short:MS[m];
+    var isCur2=(m===page);
+    var thBg=isCur2?'rgba(61,90,128,.12)':m<S.ccM?'var(--bg2)':'transparent';
+    var thCol=isCur2?'var(--blue)':m<S.ccM?'var(--tx3)':'var(--tx2)';
+    html+='<th style="min-width:80px;text-align:center;background:'+thBg+';color:'+thCol+';cursor:pointer;border-left:'+(isCur2?'2px solid var(--blue)':'')+'" onclick="asSelectCol('+m+')">';
+    html+=ml2;
+    if(m===S.ccM) html+='<br><span style="font-size:8px;color:var(--pur)">CC</span>';
+    else if(m<S.ccM) html+='<br><span style="font-size:8px;color:var(--tx3)">past</span>';
+    html+='</th>';
   }
   html+='</tr></thead><tbody>';
 
   /* Groups + WBS */
   for(var gi=0;gi<S.groups.length;gi++){
     var g=S.groups[gi];
-    if(gi>0) html+='<tr class="group-sep-row"><td colspan="'+(2+NM)+'"></td></tr>';
-    /* Group row */
-    html+='<tr class="rgroup"><td class="ap1" colspan="'+(2+NM)+'" style="position:sticky;left:0">';
+    if(gi>0) html+='<tr class="group-sep-row"><td colspan="'+(2+(NM-startCol))+'"></td></tr>';
+    html+='<tr class="rgroup"><td class="ap1" colspan="'+(2+(NM-startCol))+'" style="position:sticky;left:0">';
     html+='<span class="tog" onclick="toggleGroup(\''+g.id+'\')"><span>'+(g.col?'▶':'▼')+'</span></span> ';
     html+='<span style="font-weight:800;font-size:12px">'+g.name.toUpperCase()+'</span></td></tr>';
     if(g.col) continue;
-
-    /* Direct WBS */
-    var directWBS=S.wbs.filter(function(w){return w.parentId===g.id;});
-    directWBS.forEach(function(wbs){html+=asWBSRow(wbs,14);});
-
-    /* Subgroups */
+    S.wbs.filter(function(w){return w.parentId===g.id;}).forEach(function(wbs){html+=asWBSRow(wbs,14,startCol,page);});
     for(var si=0;si<g.sub.length;si++){
       var sg=g.sub[si];
       var sgWBS=S.wbs.filter(function(w){return w.parentId===sg.id;});
-      if(sgWBS.length===0) continue;
-      html+='<tr class="sg-sep-row"><td colspan="'+(2+NM)+'"></td></tr>';
-      html+='<tr class="rsg"><td class="ap1" colspan="'+(2+NM)+'" style="position:sticky;left:0">';
+      if(!sgWBS.length) continue;
+      html+='<tr class="sg-sep-row"><td colspan="'+(2+(NM-startCol))+'"></td></tr>';
+      html+='<tr class="rsg"><td class="ap1" colspan="'+(2+(NM-startCol))+'" style="position:sticky;left:0">';
       html+='<span class="tog" onclick="toggleSG(\''+sg.id+'\')">▼</span> ';
       html+='<span style="font-size:13px;font-weight:800;color:#4a3a80">◆ '+sg.name+'</span></td></tr>';
       if(sg.col) continue;
-      sgWBS.forEach(function(wbs){html+=asWBSRow(wbs,32);});
+      sgWBS.forEach(function(wbs){html+=asWBSRow(wbs,32,startCol,page);});
     }
   }
-
   html+='</tbody></table></div>';
   document.getElementById('pageContent').innerHTML=html;
   setTimeout(function(){restoreScrollState(_scroll);},0);
 }
 
-function asWBSRow(wbs,ind){
+function asWBSRow(wbs,ind,startCol,page){
   var budTotal=wbsTotalBudget(wbs);
   var wbsSel=window._asSel&&window._asSel[wbs.id]?window._asSel[wbs.id]:{};
   var h='<tr>';
@@ -3850,29 +3875,41 @@ function asWBSRow(wbs,ind){
   h+=wbs.name+'</td>';
   h+='<td class="ap2" style="position:sticky;left:200px;background:var(--white);z-index:10;font-family:var(--mono);font-size:11px;color:var(--blue);text-align:right">'+(budTotal?budTotal.toFixed(1):'')+'</td>';
 
-  for(var m=0;m<NM;m++){
+  for(var m=startCol;m<NM;m++){
     var budHM=bud(wbs,m);
     var workers=getWBSWorkers(wbs.id,m);
     var nW=workers.length;
     var isSel=wbsSel[m]||false;
-    var isCCM=(m===S.ccM);
+    var isCurCol=(m===page);
+    var isPastCol=(m<S.ccM);
+
+    /* Compare with prev month to show delta */
+    var prevWorkers=m>0?getWBSWorkers(wbs.id,m-1):[];
+    var delta=nW-prevWorkers.length;
+    var deltaHtml='';
+    if(m>startCol&&delta!==0){
+      deltaHtml='<span style="font-size:9px;font-weight:700;color:'+(delta>0?'var(--green)':'var(--red)')+';">'+(delta>0?'+':'')+delta+'</span>';
+    }
+
     var cellCls='as-cell'+(isSel?' as-cell-sel':'');
     if(budHM>0){
       if(nW===0) cellCls+=' as-alert-red';
       else if(nW<Math.ceil(budHM)) cellCls+=' as-alert-ora';
       else cellCls+=' as-alert-ok';
     }
+
     /* Tooltip */
     var tipLines=[];
-    if(budHM>0) tipLines.push('Budget: '+budHM.toFixed(1)+' HM / '+Math.ceil(budHM)+'w');
+    if(budHM>0) tipLines.push('Budget: '+budHM.toFixed(1)+' / '+Math.ceil(budHM)+'w');
     var fmA=getForeman(wbs.id,m);
     for(var k=0;k<workers.length;k++){
       var wk2=workers[k];
-      var isFmWk2=fmA&&fmA.workerId===wk2.id;
+      var isFmWk=fmA&&fmA.workerId===wk2.id;
       var isExp=!workerActiveInMonth(wk2,ML[m]?ML[m].month:m,ML[m]?ML[m].year:YEAR);
-      tipLines.push((isFmWk2?'★ ':'')+wk2.name+(wk2.workerId?' #'+wk2.workerId:'')+(isExp?' ⚠':''));
+      tipLines.push((isFmWk?'★ ':'')+wk2.name+(wk2.workerId?' #'+wk2.workerId:'')+(isExp?' ⚠':''));
     }
     var tip=tipLines.join('&#10;');
+
     /* Count display */
     var need=budHM>0?Math.ceil(budHM):0;
     var countHtml='';
@@ -3881,51 +3918,92 @@ function asWBSRow(wbs,ind){
     } else if(nW>0){
       countHtml='<div class="as-count"><span class="n-ass">'+nW+'</span></div>';
     }
-    var cellBg=isCCM?'rgba(78,69,128,.06)':'';
-    h+='<td oncontextmenu="asCellContext(event,\''+wbs.id+'\','+m+')" style="padding:2px;'+(cellBg?'background:'+cellBg:'')+'"><div class="'+cellCls+'"'+(tip?' data-tip="'+tip+'"':'')+' style="cursor:pointer" onclick="asToggleCell(\''+wbs.id+'\','+m+',this)">';
+    if(deltaHtml) countHtml+=deltaHtml;
+
+    var colBg=isCurCol?'rgba(61,90,128,.06)':isPastCol?'var(--bg2)':'';
+    var borderL=isCurCol?'border-left:2px solid var(--blue);':'';
+    var canClick=!isPastCol;
+    h+='<td oncontextmenu="asCellContext(event,\''+wbs.id+'\','+m+')" style="padding:2px;'+(colBg?'background:'+colBg+';':'')+borderL+'">';
+    h+='<div class="'+cellCls+'"'+(tip?' data-tip="'+tip+'"':'')+' style="cursor:'+(canClick?'pointer':'default')+'" '+(canClick?'onclick="asToggleCell(\''+wbs.id+'\','+m+',this)"':'')+' >';
     h+=countHtml;
-    /* Hidden chips for popover */
     h+='<div class="as-names">';
     for(var k=0;k<workers.length;k++){
       var wk3=workers[k];
       h+='<span class="as-chip" data-wid="'+wk3.id+'" data-wbs="'+wbs.id+'" data-m="'+m+'" onclick="event.stopPropagation();showChipPop(event,this)" style="display:none">'+wk3.name+'</span>';
     }
-    h+='</div>';
-    h+='</div></td>';
+    h+='</div></div></td>';
   }
   h+='</tr>';
-
-  /* Propagation hint row if this WBS has assignments that differ month to month */
   return h;
 }
 
-
-function asSetMonth(m){
-  window._asMonth=m;
+function asSetPage(m){
+  window._asPage=m;
   window._asSel={};
-  /* If future month has no assignments yet, pre-fill from previous month */
   if(m>S.ccM) propagateFromPrevMonth(m);
   renderAssignmentsPage();
 }
 
+function asClearAll(){window._asSel={};renderAssignmentsPage();}
+function asClearSel(wbsId){if(window._asSel)window._asSel[wbsId]={};renderAssignmentsPage();}
+
+function asToggleCell(wbsId,m,el){
+  if(!window._asSel) window._asSel={};
+  if(!window._asSel[wbsId]) window._asSel[wbsId]={};
+  window._asSel[wbsId][m]=!window._asSel[wbsId][m];
+  el.classList.toggle('as-cell-sel',window._asSel[wbsId][m]);
+  renderAssignmentsPage();
+}
+
+function asSelectCol(m){
+  S.wbs.forEach(function(w){
+    if(!window._asSel[w.id]) window._asSel[w.id]={};
+    window._asSel[w.id][m]=true;
+  });
+  renderAssignmentsPage();
+}
+
+function asToggleWBS(wbsId,m){
+  if(!window._asSel) window._asSel={};
+  if(!window._asSel[wbsId]) window._asSel[wbsId]={};
+  window._asSel[wbsId][m]=!window._asSel[wbsId][m];
+  renderAssignmentsPage();
+}
+
+function asOpenAnyPicker(){
+  var pairs=[];
+  Object.keys(window._asSel||{}).forEach(function(wbsId){
+    Object.keys(window._asSel[wbsId]||{}).filter(function(k){return window._asSel[wbsId][k];}).forEach(function(k){
+      pairs.push({wbsId:wbsId,month:+k});
+    });
+  });
+  if(!pairs.length) return;
+  var wbsIds=pairs.map(function(p){return p.wbsId;}).filter(function(v,i,a){return a.indexOf(v)===i;});
+  var months=pairs.map(function(p){return p.month;}).filter(function(v,i,a){return a.indexOf(v)===i;});
+  if(wbsIds.length===1) openWorkerPickerMulti(wbsIds[0],months);
+  else openWorkerPickerMultiWBS(pairs);
+}
+
+function setAsTab(tab){window._asTab=tab;renderAssignmentsPage();}
+function asSetMonth(m){asSetPage(m);}  /* alias */
+
 function asResetFromPrev(slotIdx){
-  if(!confirm('Replace assignments for this month with a copy from the previous month?')) return;
-  /* Clear current month first */
-  var tYr=ML[slotIdx]?ML[slotIdx].year:YEAR;
-  var tMo=ML[slotIdx]!==undefined?ML[slotIdx].month:slotIdx;
+  if(!confirm('Reset this month from '+(ML[slotIdx-1]?ML[slotIdx-1].label:'previous month')+'?')) return;
+  var tYr=ML[slotIdx]?ML[slotIdx].year:YEAR; var tMo=ML[slotIdx]!==undefined?ML[slotIdx].month:slotIdx;
   S.assignments=S.assignments.filter(function(a){return !(a.month===tMo&&a.year===tYr);});
-  /* Re-propagate */
   propagateFromPrevMonth(slotIdx);
   renderAssignmentsPage();
 }
 
 function asClearMonth(slotIdx){
   if(!confirm('Remove all assignments for this month?')) return;
-  var tYr=ML[slotIdx]?ML[slotIdx].year:YEAR;
-  var tMo=ML[slotIdx]!==undefined?ML[slotIdx].month:slotIdx;
+  var tYr=ML[slotIdx]?ML[slotIdx].year:YEAR; var tMo=ML[slotIdx]!==undefined?ML[slotIdx].month:slotIdx;
   S.assignments=S.assignments.filter(function(a){return !(a.month===tMo&&a.year===tYr);});
   saveS(); showToast('Month cleared','ok'); renderAssignmentsPage();
 }
+
+
+
 
 
 function asToggleWBS(wbsId,m){
@@ -4072,3 +4150,7 @@ function openWP(el){openWorkerPickerMulti(el.dataset.wbs,[parseInt(el.dataset.m)
 </html>
 
 function triggerWBSImport(){var el=document.getElementById('wbsImportInput');if(el){el.value='';el.click();}}
+
+</script>
+</body>
+</html>
