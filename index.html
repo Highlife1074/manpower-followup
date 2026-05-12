@@ -3430,6 +3430,85 @@ function delSpec(key){
   refreshSpecsFromS(); saveS(); openSettingsModal();
 }
 
+
+/* ============================================================
+   WORKER ADD / EDIT MODAL
+   ============================================================ */
+function openWorkerModal(id){
+  var isNew=!id;
+  var wk=isNew?{id:uid(),workerId:'',name:'',companyId:'',spec:'',dateDebut:'',dateFinContrat:'',dateFinRevisee:''}:getWorker(id);
+  if(!wk) return;
+  var box=document.getElementById('mbox');
+  box.className='modal';
+  document.getElementById('mbg').className='mbg';
+
+  var coO='<option value="">— No company —</option>';
+  for(var i=0;i<S.companies.length;i++) coO+='<option value="'+S.companies[i].id+'"'+(wk.companyId===S.companies[i].id?' selected':'')+'>'+S.companies[i].name+'</option>';
+  var spO='<option value="">— No specialty —</option>';
+  for(var i=0;i<SPECS.length;i++) spO+='<option value="'+SPECS[i].key+'"'+(wk.spec===SPECS[i].key?' selected':'')+'>'+SPECS[i].label+'</option>';
+
+  function fmtDate(iso){if(!iso)return '';try{return new Date(iso).toISOString().slice(0,10);}catch(e){return '';}}
+
+  var h='<h3>'+(isNew?'&#10133; Add Worker':'&#9998; Edit Worker')+'</h3>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  h+='<div><label>Full Name *</label><input id="wkName" value="'+( wk.name||'')+'"></div>';
+  h+='<div><label>Worker ID / Badge #</label><input id="wkId" value="'+(wk.workerId||'')+'"></div>';
+  h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  h+='<div><label>Company</label><select id="wkCo" onchange="wkAutoFillPU()">'+coO+'</select></div>';
+  h+='<div><label>Specialty</label><select id="wkSpec" onchange="wkAutoFillPU()">'+spO+'</select></div>';
+  h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">';
+  h+='<div><label>Contract Start</label><input id="wkStart" type="date" value="'+fmtDate(wk.dateDebut)+'"></div>';
+  h+='<div><label>Contract End</label><input id="wkEnd" type="date" value="'+fmtDate(wk.dateFinContrat)+'"></div>';
+  h+='<div><label>Revised End</label><input id="wkRev" type="date" value="'+fmtDate(wk.dateFinRevisee)+'"></div>';
+  h+='</div>';
+
+  var btnDelete=isNew?'':'<button class="btn danger" onclick="deleteWorker(\''+id+'\');closeModal()">Delete</button>';
+  h+='<div class="ma">'+btnDelete+'<button class="btn" onclick="closeModal()">Cancel</button>';
+  h+='<button class="btn pri" onclick="saveWorkerModal(\''+wk.id+'\','+isNew+')">Save</button></div>';
+
+  box.innerHTML=h;
+  document.getElementById('mbg').style.display='flex';
+  document.getElementById('wkName').focus();
+}
+
+function wkAutoFillPU(){
+  /* nothing visible needed here — PU is per WBS row, not per worker */
+}
+
+function saveWorkerModal(id,isNew){
+  var name=(document.getElementById('wkName').value||'').trim();
+  if(!name){showToast('Name is required','warn');return;}
+  var workerId=(document.getElementById('wkId').value||'').trim();
+  var companyId=document.getElementById('wkCo').value||'';
+  var spec=document.getElementById('wkSpec').value||'';
+  var ds=document.getElementById('wkStart').value;
+  var de=document.getElementById('wkEnd').value;
+  var dr=document.getElementById('wkRev').value;
+
+  var wk={
+    id:id,
+    workerId:workerId,
+    name:name,
+    companyId:companyId,
+    spec:spec,
+    dateDebut:ds?new Date(ds).toISOString():null,
+    dateFinContrat:de?new Date(de).toISOString():null,
+    dateFinRevisee:dr?new Date(dr).toISOString():null
+  };
+
+  if(isNew){
+    S.workers.push(wk);
+    showToast('Worker added: '+name,'ok');
+  } else {
+    var idx=S.workers.findIndex(function(w){return w.id===id;});
+    if(idx>=0) S.workers[idx]=wk;
+    showToast('Worker updated: '+name,'ok');
+  }
+  closeModal(); saveS(); render();
+}
+
 /* ============================================================
    WORKERS PAGE
    ============================================================ */
@@ -3453,6 +3532,7 @@ function renderWorkersPage(){
   html+='<div style="padding:6px 14px;display:flex;gap:8px;align-items:center;flex-shrink:0">';
   html+='<input type="text" id="wkSearch" placeholder="&#128269; Search name, company, specialty..." oninput="wkDoSearch(this.value)" style="padding:5px 10px;border:1.5px solid var(--border2);border-radius:7px;font-size:12px;width:280px;outline:none">';
   html+='<span style="font-size:11px;color:var(--tx3)">'+S.workers.length+' workers</span>';
+  html+='<button class="btn pri" style="margin-left:auto" onclick="openWorkerModal(null)">&#10133; Add Worker</button>';
   html+='</div>';
   /* Table */
   html+='<div class="tw" style="overflow:auto;flex:1;min-height:0">';
