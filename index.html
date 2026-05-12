@@ -3890,12 +3890,10 @@ function renderAssignmentsPage(){
   if(!isPast&&page>0&&!hasAssign) html+='<span style="font-size:10px;color:var(--green);background:var(--gl);padding:2px 8px;border-radius:10px">↓ Pre-filled from '+prevLabel+'</span>';
 
   if(!isPast){
-    if(totalSel>0){
-      html+='<button class="btn pri" style="margin-left:auto;padding:5px 14px;font-weight:700" onclick="asOpenAnyPicker()">&#128101; Assign workers ('+totalSel+' selected)</button>';
-      html+='<button class="btn" style="font-size:11px" onclick="asClearAll()">✕ Clear sel.</button>';
-    } else {
-      html+='<span style="margin-left:auto;font-size:11px;color:var(--tx3)">Click a cell to assign workers · Shift+click to multi-select</span>';
-    }
+    /* Always render these with ids so asUpdateTopBar() can show/hide without re-render */
+    html+='<button id="asBigBtn" class="btn pri" style="margin-left:auto;padding:6px 18px;font-size:13px;font-weight:700;display:'+(totalSel>0?'inline-flex':'none')+'" onclick="asOpenAnyPicker()">&#128101; Assign workers'+(totalSel>0?' — '+totalSel+' cell'+(totalSel>1?'s':'')+' selected':'')+' </button>';
+    html+='<button id="asClrBtn" class="btn" style="font-size:11px;display:'+(totalSel>0?'inline-flex':'none')+'" onclick="asClearAll()">✕ Clear</button>';
+    html+='<span id="asHint" style="margin-left:auto;font-size:11px;color:var(--tx3);display:'+(totalSel>0?'none':'inline')+'">&#128161; Click cells to select, then <strong>Assign workers</strong> appears</span>';
     if(hasAssign&&page>0){
       html+='<button class="btn soft" style="font-size:10px" onclick="asResetFromPrev('+page+')" title="Re-copy from '+prevLabel+'">&#8635; Reset from '+prevLabel+'</button>';
       html+='<button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red)" onclick="asClearMonth('+page+')">&#128465; Clear</button>';
@@ -4058,12 +4056,12 @@ function asUpdateTopBar(){
   });
   var btn=document.getElementById('asBigBtn');
   var hint=document.getElementById('asHint');
+  var clrBtn=document.getElementById('asClrBtn');
   if(btn){
     btn.style.display=total>0?'inline-flex':'none';
-    btn.textContent='\u{1F465} Assign workers — '+total+' cell'+(total>1?'s':'')+' selected';
+    btn.innerHTML='&#128101; Assign workers'+(total>0?' &mdash; '+total+' cell'+(total>1?'s':'')+' selected':'');
   }
   if(hint) hint.style.display=total>0?'none':'inline';
-  var clrBtn=document.getElementById('asClrBtn');
   if(clrBtn) clrBtn.style.display=total>0?'inline-flex':'none';
 }
 function asToggleCell(wbsId,m,el){
