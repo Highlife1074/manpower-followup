@@ -836,7 +836,7 @@ function buildDefault(){
       {key:'FINISH',label:'Finishers'},
       {key:'DRY',label:'Dry Wall'}
     ],
-    settings:{startYear:2025,startMonth:0,endYear:2025,endMonth:11}
+    settings:{startYear:2025,startMonth:0,endYear:2025,endMonth:11},asLocked:true
   };
 }
 
@@ -850,6 +850,7 @@ function migrate(s){
   if(!s.cc){s.cc=[];for(var m=0;m<NM;m++)s.cc.push({reel:{},rad:{},inv:{hrs:0,hm:0,amt:0,note:''}});}
   for(var m=0;m<NM;m++){if(!s.cc[m])s.cc[m]={reel:{},rad:{},inv:{hrs:0,amt:0,note:''}};if(!s.cc[m].inv)s.cc[m].inv={hrs:0,hm:0,amt:0,note:''};if(s.cc[m].inv.hm===undefined)s.cc[m].inv.hm=0;}
   if(s.ccM===undefined)s.ccM=-1;
+  if(s.asLocked===undefined)s.asLocked=true;
   if(!s.workers)s.workers=[];
   if(!s.assignments)s.assignments=[];
   if(!s.suggestions)s.suggestions=[];
@@ -940,6 +941,22 @@ function filterW(pid){return S.wbs.filter(function(w){return w.parentId===pid;})
    VIEW STATE
    ============================================================ */
 var VIEW='budget';
+
+/* ── Assignment past-month lock ── */
+function asUnlockPast(){
+  var pin=prompt('Enter PIN to unlock past months:');
+  if(pin===null) return;
+  if(pin===(S.pin||DEFAULT_PIN)){
+    S.asLocked=false; saveS(); renderAssignmentsPage();
+    showToast('Past months unlocked','ok');
+  } else {
+    showToast('Wrong PIN','warn');
+  }
+}
+function asLockPast(){
+  S.asLocked=true; saveS(); renderAssignmentsPage();
+  showToast('Past months locked','ok');
+}
 /* ── Universal scroll preservation ── */
 function saveScrollState(){
   var s={wx:window.scrollX||0,wy:window.scrollY||0};
@@ -3922,9 +3939,10 @@ function asWBSRow(wbs,ind,startCol,page){
 
     var colBg=isCurCol?'rgba(61,90,128,.06)':isPastCol?'var(--bg2)':'';
     var borderL=isCurCol?'border-left:2px solid var(--blue);':'';
-    var canClick=!isPastCol;
+    var canClick=isPastCol?(!!(!S.asLocked)):true;
     h+='<td oncontextmenu="asCellContext(event,\''+wbs.id+'\','+m+')" style="padding:2px;'+(colBg?'background:'+colBg+';':'')+borderL+'">';
-    h+='<div class="'+cellCls+'"'+(tip?' data-tip="'+tip+'"':'')+' style="cursor:'+(canClick?'pointer':'default')+'" '+(canClick?'onclick="asToggleCell(\''+wbs.id+'\','+m+',this)"':'')+' >';
+    var dataAttrs=' data-wbs-id="'+wbs.id+'" data-slot="'+m+'"';
+    h+='<div class="'+cellCls+'"'+(tip?' data-tip="'+tip+'"':'')+dataAttrs+' style="cursor:'+(canClick?'pointer':'default')+'"'+(canClick?' onclick="asCellClick(this)"':'')+' >';
     h+=countHtml;
     h+='<div class="as-names">';
     for(var k=0;k<workers.length;k++){
@@ -3947,11 +3965,16 @@ function asSetPage(m){
 function asClearAll(){window._asSel={};renderAssignmentsPage();}
 function asClearSel(wbsId){if(window._asSel)window._asSel[wbsId]={};renderAssignmentsPage();}
 
+function asCellClick(el){
+  var wbsId=el.dataset.wbsId; var m=parseInt(el.dataset.slot);
+  if(!wbsId||isNaN(m)) return;
+  asToggleCell(wbsId,m,el);
+}
 function asToggleCell(wbsId,m,el){
   if(!window._asSel) window._asSel={};
   if(!window._asSel[wbsId]) window._asSel[wbsId]={};
   window._asSel[wbsId][m]=!window._asSel[wbsId][m];
-  el.classList.toggle('as-cell-sel',window._asSel[wbsId][m]);
+  if(el) el.classList.toggle('as-cell-sel',!!window._asSel[wbsId][m]);
   renderAssignmentsPage();
 }
 
@@ -4015,64 +4038,9 @@ function asToggleWBS(wbsId,m){
 }
 
 
-function asToggleCell(wbsId,m,el){
-  if(!window._asSel) window._asSel={};
-  if(!window._asSel[wbsId]) window._asSel[wbsId]={};
-  var was=!!window._asSel[wbsId][m];
-  window._asSel[wbsId][m]=!was;
-  /* Visual feedback immediately without waiting for full re-render */
-  el.classList.toggle('as-cell-sel',!was);
-  /* Update the assign button count */
-  var totalSel=0;
-  Object.keys(window._asSel).forEach(function(wid){
-    Object.keys(window._asSel[wid]||{}).forEach(function(k){if(window._asSel[wid][k])totalSel++;});
-  });
-  var btn=document.querySelector('.btn.pri[onclick="asOpenAnyPicker()"]');
-  if(btn) btn.textContent='Assign workers → '+totalSel+' cell'+(totalSel>1?'s':'')+' selected';
-  /* Show/hide the assign bar without full re-render */
-  renderAssignmentsPage();
-}
 
-function asSelectCol(m){
-  /* Select all WBS cells for this month */
-  S.wbs.forEach(function(w){
-    if(!window._asSel[w.id]) window._asSel[w.id]={};
-    window._asSel[w.id][m]=true;
-  });
-  renderAssignmentsPage();
-}
 
-function asClearAll(){
-  window._asSel={};
-  renderAssignmentsPage();
-  showToast('Selection cleared','ok');
-}
 
-function asClearSel(wbsId){
-  window._asSel[wbsId]={};
-  renderAssignmentsPage();
-}
-
-function asOpenAnyPicker(){
-  var pairs=[];
-  Object.keys(window._asSel||{}).forEach(function(wbsId){
-    var slots=window._asSel[wbsId]||{};
-    Object.keys(slots).filter(function(k){return slots[k];}).forEach(function(k){
-      pairs.push({wbsId:wbsId,month:+k});
-    });
-  });
-  if(!pairs.length) return;
-  var wbsIds=pairs.map(function(p){return p.wbsId;}).filter(function(v,i,a){return a.indexOf(v)===i;});
-  var months=pairs.map(function(p){return p.month;}).filter(function(v,i,a){return a.indexOf(v)===i;});
-  /* After save, update reel/rad based on assignments */
-  if(wbsIds.length===1){
-    openWorkerPickerMulti(wbsIds[0],months);
-  } else {
-    openWorkerPickerMultiWBS(pairs);
-  }
-}
-
-function setAsTab(tab){window._asTab=tab;renderAssignmentsPage();}
 
 function remAssign(el){
   var wid=el.dataset.wid; var m=parseInt(el.dataset.m);
