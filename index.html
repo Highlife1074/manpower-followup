@@ -942,6 +942,10 @@ function filterW(pid){return S.wbs.filter(function(w){return w.parentId===pid;})
    ============================================================ */
 var VIEW='budget';
 
+
+/* Track shift key for multi-select in assignments */
+document.addEventListener('keydown',function(e){if(e.key==='Shift') window._asShift=true;});
+document.addEventListener('keyup',function(e){if(e.key==='Shift') window._asShift=false;});
 /* ── Assignment past-month lock ── */
 function asUnlockPast(){
   var pin=prompt('Enter PIN to unlock past months:');
@@ -3826,7 +3830,7 @@ function renderAssignmentsPage(){
       html+='<button class="btn pri" style="margin-left:auto;padding:5px 14px;font-weight:700" onclick="asOpenAnyPicker()">&#128101; Assign workers ('+totalSel+' selected)</button>';
       html+='<button class="btn" style="font-size:11px" onclick="asClearAll()">✕ Clear sel.</button>';
     } else {
-      html+='<span style="margin-left:auto;font-size:11px;color:var(--tx3)">Click cells to select → Assign workers</span>';
+      html+='<span style="margin-left:auto;font-size:11px;color:var(--tx3)">Click a cell to assign workers · Shift+click to multi-select</span>';
     }
     if(hasAssign&&page>0){
       html+='<button class="btn soft" style="font-size:10px" onclick="asResetFromPrev('+page+')" title="Re-copy from '+prevLabel+'">&#8635; Reset from '+prevLabel+'</button>';
@@ -3968,7 +3972,17 @@ function asClearSel(wbsId){if(window._asSel)window._asSel[wbsId]={};renderAssign
 function asCellClick(el){
   var wbsId=el.dataset.wbsId; var m=parseInt(el.dataset.slot);
   if(!wbsId||isNaN(m)) return;
-  asToggleCell(wbsId,m,el);
+  /* Direct open picker for this cell */
+  /* If Shift held: add to multi-selection instead */
+  if(window._asShift){
+    asToggleCell(wbsId,m,el);
+  } else {
+    /* Single click: directly open assignment picker */
+    window._asSel={};
+    if(!window._asSel[wbsId]) window._asSel[wbsId]={};
+    window._asSel[wbsId][m]=true;
+    openWorkerPickerMulti(wbsId,[m]);
+  }
 }
 function asToggleCell(wbsId,m,el){
   if(!window._asSel) window._asSel={};
