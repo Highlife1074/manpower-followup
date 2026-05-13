@@ -5071,22 +5071,10 @@ function openWorkerPickerMultiWBS(pairs){
 function openWP(el){openWorkerPickerMulti(el.dataset.wbs,[parseInt(el.dataset.m)]);}
 
 
-</script>
 
-<button class="sug-fab" onclick="toggleSug()" title="Suggestions">&#128161;</button>
-<div class="sug-panel" id="sugPanel">
-  <h4>&#128161; Suggestions & Improvements</h4>
-  <textarea id="sugText" placeholder="Describe your suggestion..."></textarea>
-  <div style="display:flex;justify-content:flex-end;margin-top:8px;gap:6px;">
-    <button class="btn" onclick="toggleSug()">Close</button>
-    <button class="btn pri" onclick="submitSug()">Add</button>
-  </div>
-  <div class="sug-list" id="sugList"></div>
-</div>
-</body>
-</html>
 
 function triggerWBSImport(){var el=document.getElementById('wbsImportInput');if(el){el.value='';el.click();}}
+
 
 </script>
 </body>
