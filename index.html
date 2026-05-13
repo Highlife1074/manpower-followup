@@ -4716,6 +4716,7 @@ window._asTab='assign';
    ASSIGNMENTS PAGE — monthly tabs, each drives CC
    ============================================================ */
 function renderAssignmentsPage(){
+  try {
   var _scroll=saveScrollState();
   if(!window._asTab) window._asTab='assign';
   /* Always start from CC month — no manual page selection */
@@ -4815,6 +4816,10 @@ function renderAssignmentsPage(){
   html+='</tbody></table></div>';
   document.getElementById('pageContent').innerHTML=html;
   setTimeout(function(){restoreScrollState(_scroll);},0);
+  } catch(e) {
+    console.error('renderAssignmentsPage error:',e);
+    document.getElementById('pageContent').innerHTML='<div style="padding:20px;color:red"><strong>Error:</strong> '+e.message+'<br><pre style="font-size:10px">'+e.stack+'</pre></div>';
+  }
 }
 
 function asWBSRow(wbs,ind,startCol,page){
