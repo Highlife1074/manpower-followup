@@ -4823,7 +4823,7 @@ function asWBSRow(wbs,ind,startCol,page){
   var h='<tr>';
   h+='<td class="ap1" style="position:sticky;left:0;background:var(--white);z-index:10;padding-left:'+ind+'px;font-weight:600;font-size:11px">';
   if(wbs.code) h+='<span class="codb" style="font-size:9px">'+wbs.code+'</span> ';
-  h+=wbs.name+'</td>';
+  h+=(wbs.name||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</td>';
   h+='<td class="ap2" style="position:sticky;left:200px;background:var(--white);z-index:10;font-family:var(--mono);font-size:11px;color:var(--blue);text-align:right">'+(budTotal?budTotal.toFixed(1):'')+'</td>';
 
   for(var m=startCol;m<NM;m++){
@@ -4834,8 +4834,8 @@ function asWBSRow(wbs,ind,startCol,page){
     var isCurCol=(m===page);
     var isPastCol=(m<S.ccM);
 
-    /* Compare with prev month to show delta */
-    var prevWorkers=m>0?getWBSWorkers(wbs.id,m-1):[];
+    /* Compare with prev month to show delta (only if m > startCol) */
+    var prevWorkers=(m>startCol&&m>0)?getWBSWorkers(wbs.id,m-1):[];
     var delta=nW-prevWorkers.length;
     var deltaHtml='';
     if(m>startCol&&delta!==0){
@@ -4859,7 +4859,7 @@ function asWBSRow(wbs,ind,startCol,page){
       var isExp=!workerActiveInMonth(wk2,ML[m]?ML[m].month:m,ML[m]?ML[m].year:YEAR);
       tipLines.push((isFmWk?'★ ':'')+wk2.name+(wk2.workerId?' #'+wk2.workerId:'')+(isExp?' ⚠':''));
     }
-    var tip=tipLines.join('&#10;');
+    var tip=tipLines.join('&#10;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
     /* Count display */
     var need=budHM>0?Math.ceil(budHM):0;
@@ -4882,7 +4882,7 @@ function asWBSRow(wbs,ind,startCol,page){
     h+='<div class="as-names">';
     for(var k=0;k<workers.length;k++){
       var wk3=workers[k];
-      h+='<span class="as-chip" data-wid="'+wk3.id+'" data-wbs="'+wbs.id+'" data-m="'+m+'" onclick="event.stopPropagation();showChipPop(event,this)" style="display:none">'+wk3.name+'</span>';
+      h+='<span class="as-chip" data-wid="'+wk3.id+'" data-wbs="'+wbs.id+'" data-m="'+m+'" onclick="event.stopPropagation();showChipPop(event,this)" style="display:none">'+wk3.name.replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';
     }
     h+='</div></div></td>';
   }
