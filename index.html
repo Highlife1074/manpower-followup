@@ -4029,7 +4029,9 @@ function renderWorkersPage(){
   html+='<thead><tr>';
   html+='<th style="width:32px;text-align:center"><input class="wk-cb" type="checkbox" id="wkCbAll" onchange="wkToggleAll(this)" title="Select all"></th>';
   html+='<th>#</th><th>Name</th><th>Company</th><th>Specialty</th>';
-  html+='<th>Start</th><th>End</th><th>Status</th><th>Rating</th><th>Comment</th>';
+  html+='<th>Start</th><th>End</th><th>Status</th>';
+  html+='<th style="min-width:80px">Rating</th>';
+  html+='<th style="min-width:140px">Comment</th>';
   for(var m=0;m<NM;m++) html+='<th style="min-width:24px;text-align:center;font-size:9px">'+(ML[m]?ML[m].short:MS[m])+'</th>';
   html+='<th></th>';
   html+='</tr></thead><tbody>';
@@ -4067,6 +4069,10 @@ function renderWorkersPage(){
     html+='<td style="font-size:10px;color:var(--tx3)">'+ds+'</td>';
     html+='<td style="font-size:10px;color:var(--tx3)">'+de+'</td>';
     html+='<td>'+stBadge+'</td>';
+    /* Rating + Comment — visible before scrolling right */
+    var ratingColor={'Very Good':'var(--green)','Good':'var(--blue)','Average':'var(--amber)','Bad':'var(--red)'}[wk.rating||'']||'var(--tx3)';
+    html+='<td style="font-size:10px;font-weight:700;color:'+ratingColor+';white-space:nowrap">'+(wk.rating||'—')+'</td>';
+    html+='<td style="font-size:10px;color:var(--tx3);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+(wk.comment||'')+'">'+(wk.comment||'')+'</td>';
     /* Month dots */
     for(var m=0;m<NM;m++){
       var sl2=ML[m]; if(!sl2) continue;
@@ -4076,9 +4082,6 @@ function renderWorkersPage(){
       var col2=asgn2?'color:var(--green)':active2?'color:var(--border2)':'color:var(--rl)';
       html+='<td style="text-align:center;font-size:10px;'+col2+'">'+dot+'</td>';
     }
-    var ratingColor={'Very Good':'var(--green)','Good':'var(--blue)','Average':'var(--amber)','Bad':'var(--red)'}[wk.rating||'']||'var(--tx3)';
-    html+='<td style="font-size:10px;font-weight:700;color:'+ratingColor+'">'+(wk.rating||'—')+'</td>';
-    html+='<td style="font-size:10px;color:var(--tx3);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+(wk.comment||'')+'">'+(wk.comment||'')+'</td>';
     html+='<td style="white-space:nowrap"><button class="bic" onclick="openWorkerModal(\''+wk.id+'\')">e</button> <button class="bic del" onclick="deleteWorker(\''+wk.id+'\')">x</button></td>';
     html+='</tr>';
   }
