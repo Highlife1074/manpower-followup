@@ -319,13 +319,9 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 
 /* Assignment grid */
 .as-grid{overflow:auto;flex:1;min-height:0;}
-.as-table{border-collapse:collapse;width:max-content;min-width:100%;font-size:11px;}
-.as-table th{background:var(--bg2);padding:5px 8px;border-bottom:2px solid var(--border2);border-right:1px solid var(--border);font-size:10px;font-weight:700;color:var(--tx3);white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;}
-.as-table th.ap1{text-align:left;min-width:220px;max-width:280px;}
-.as-table th.ap2{min-width:70px;text-align:right;}
-.as-table td{border-bottom:1px solid var(--border);border-right:1px solid var(--border);padding:0;vertical-align:top;}
-.as-table td.ap1{background:var(--white);padding:4px 8px;font-weight:600;font-size:11px;min-width:220px;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.as-table td.ap2{background:var(--white);padding:4px 8px;text-align:right;min-width:70px;}
+/* assignments table — fully inline styles, no class dependencies */
+.as-table{border-collapse:collapse;font-size:11px;width:max-content;}
+.as-grid table{table-layout:auto;}
 .as-cell{min-width:64px;min-height:36px;padding:3px 6px;position:relative;display:flex;align-items:center;justify-content:center;}
 .as-count{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--tx2);text-align:center;line-height:1.2;}
 .as-count .n-ass{color:var(--green);}
@@ -4776,9 +4772,9 @@ function renderAssignmentsPage(){
   var startCol=page; /* from CC month to end of project */
 
   html+='<div class="as-grid" style="flex:1;overflow:auto;min-height:0">';
-  html+='<table class="as-table"><thead><tr>';
-  html+='<th class="ap1">WBS</th>';
-  html+='<th class="ap2">Budget</th>';
+  html+='<table style="border-collapse:collapse;font-size:11px;width:max-content;min-width:100%"><thead><tr>';
+  html+='<th style="background:#f0ede8;padding:6px 10px;border:1px solid #c8c0b8;font-size:10px;font-weight:700;color:#6a5a50;text-align:left;min-width:220px">WBS</th>';
+  html+='<th style="background:#f0ede8;padding:6px 8px;border:1px solid #c8c0b8;font-size:10px;font-weight:700;color:#6a5a50;text-align:right;min-width:70px">Budget</th>';
   for(var m=startCol;m<NM;m++){
     var ml2=ML[m]?ML[m].short:MS[m];
     var isCur2=(m===page);
@@ -4796,9 +4792,9 @@ function renderAssignmentsPage(){
   for(var gi=0;gi<S.groups.length;gi++){
     var g=S.groups[gi];
     if(gi>0) html+='<tr class="group-sep-row"><td colspan="'+(2+(NM-startCol))+'"></td></tr>';
-    html+='<tr class="rgroup"><td class="ap1" colspan="'+(2+(NM-startCol))+'">';
-    html+='<span class="tog" onclick="toggleGroup(\''+g.id+'\')"><span>'+(g.col?'▶':'▼')+'</span></span> ';
-    html+='<span style="font-weight:800;font-size:12px">'+g.name.toUpperCase()+'</span></td></tr>';
+    html+='<tr style="background:#F05A00"><td colspan="'+(2+(NM-startCol))+'" style="padding:5px 10px;font-weight:800;font-size:12px;color:#1a1a1a;border:1px solid #c04800">';
+    html+='<span style="cursor:pointer;margin-right:6px" onclick="toggleGroup(\''+g.id+'\')">'+(g.col?'▶':'▼')+'</span>';
+    html+=g.name.toUpperCase()+'</td></tr>';
     if(g.col) continue;
     S.wbs.filter(function(w){return w.parentId===g.id;}).forEach(function(wbs){html+=asWBSRow(wbs,14,startCol,page);});
     for(var si=0;si<g.sub.length;si++){
@@ -4806,9 +4802,8 @@ function renderAssignmentsPage(){
       var sgWBS=S.wbs.filter(function(w){return w.parentId===sg.id;});
       if(!sgWBS.length) continue;
       html+='<tr class="sg-sep-row"><td colspan="'+(2+(NM-startCol))+'"></td></tr>';
-      html+='<tr class="rsg"><td class="ap1" colspan="'+(2+(NM-startCol))+'">';
-      html+='<span class="tog" onclick="toggleSG(\''+sg.id+'\')">▼</span> ';
-      html+='<span style="font-size:13px;font-weight:800;color:#4a3a80">◆ '+sg.name+'</span></td></tr>';
+      html+='<tr style="background:#e8e4dc"><td colspan="'+(2+(NM-startCol))+'" style="padding:4px 10px 4px 20px;font-size:12px;font-weight:800;color:#4a3a80;border:1px solid #d0c8c0">';
+      html+='<span style="cursor:pointer;margin-right:4px" onclick="toggleSG(\''+sg.id+'\')">▼</span>◆ '+sg.name+'</td></tr>';
       if(sg.col) continue;
       sgWBS.forEach(function(wbs){html+=asWBSRow(wbs,32,startCol,page);});
     }
@@ -4826,10 +4821,12 @@ function asWBSRow(wbs,ind,startCol,page){
   var budTotal=wbsTotalBudget(wbs);
   var wbsSel=window._asSel&&window._asSel[wbs.id]?window._asSel[wbs.id]:{};
   var h='<tr>';
-  h+='<td class="ap1" style="padding-left:'+ind+'px">';
-  if(wbs.code) h+='<span class="codb" style="font-size:9px">'+wbs.code+'</span> ';
+  var TD_WBS='background:#fff;padding:5px 6px 5px '+ind+'px;border:1px solid #d8d0c8;font-weight:600;font-size:11px;color:#2a1a10;min-width:220px;white-space:nowrap;';
+  var TD_BUD='background:#fff;padding:4px 8px;border:1px solid #d8d0c8;font-family:monospace;font-size:11px;color:#3d5a80;text-align:right;min-width:70px;';
+  h+='<td style="'+TD_WBS+'">';
+  if(wbs.code) h+='<span style="font-size:9px;background:#e8e0d8;padding:1px 4px;border-radius:3px;margin-right:4px">'+wbs.code+'</span>';
   h+=(wbs.name||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</td>';
-  h+='<td class="ap2" style="font-family:var(--mono);font-size:11px;color:var(--blue)">'+(budTotal?budTotal.toFixed(1):'')+'</td>';
+  h+='<td style="'+TD_BUD+'">'+(budTotal?budTotal.toFixed(1):'')+'</td>';
 
   for(var m=startCol;m<NM;m++){
     var budHM=bud(wbs,m);
