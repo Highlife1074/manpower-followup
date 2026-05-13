@@ -2690,17 +2690,17 @@ function importWorkers(rows){
 
   /* Scan first 5 rows to find header */
   var headerIdx=-1, header=[];
-  var keywords=['name','nom','worker','surname','specialty','company','id','prenom'];
-  for(var hi=0;hi<Math.min(5,rows.length);hi++){
-    var row=rows[hi]; if(!row) continue;
+  var keywords=['name','nom','worker','surname','specialty','company','id','prenom','last','first','position','employee','trade'];
+  for(var hi=0;hi<Math.min(8,rows.length);hi++){
+    var row=rows[hi]; if(!row||!row.some(function(v){return v!=null&&v!==''})) continue;
     var joined=row.map(function(v){return (v||'').toString().toLowerCase();}).join('|');
     var hits=keywords.filter(function(k){return joined.indexOf(k)>=0;}).length;
-    if(hits>=2){
+    if(hits>=1){
       header=row.map(function(h){return (h||'').toString().trim().toLowerCase();});
       headerIdx=hi; break;
     }
   }
-  if(headerIdx<0){alert('No header row found in first 5 rows.');return;}
+  if(headerIdx<0){alert('No header row found in first 8 rows. Headers found: '+(rows[0]||[]).join(', '));return;}
 
   function col(names){
     for(var ni=0;ni<names.length;ni++){
@@ -2727,11 +2727,18 @@ function importWorkers(rows){
      Generic: first+last or fullname */
   var hStr=header.join('|');
   var isDSS=(header[0]==='name' && header.indexOf('surname')===7 && ciId<0);
+  /* BIK format: 'last name' + 'first name' + 'position' as specialty */
+  var isBIK=(header.indexOf('last name')>=0&&header.indexOf('first name')>=0);
   var ciFirst=-1, ciLast=-1, ciName=-1;
+  var ciPos=col(['position','poste','role','job title','title']); /* position = specialty */
 
   if(isDSS){
     /* DSS: col A=lastname, col H=firstname */
     ciLast=0; ciFirst=7;
+  } else if(isBIK){
+    ciLast=header.indexOf('last name');
+    ciFirst=header.indexOf('first name');
+    if(ciSpec<0) ciSpec=ciPos; /* use position as specialty */
   } else {
     /* Generic detection */
     var nameIdx=header.indexOf('name'); var surnameIdx=header.indexOf('surname');
@@ -2790,13 +2797,16 @@ function importWorkers(rows){
     var up=raw.trim().toUpperCase().replace(/\s+/g,' ');
     for(var i=0;i<SPECS.length;i++) if(SPECS[i].key.toUpperCase()===up||SPECS[i].label.toUpperCase()===up) return SPECS[i].key;
     for(var i=0;i<SPECS.length;i++) if(up.indexOf(SPECS[i].key.toUpperCase())>=0||up.indexOf(SPECS[i].label.toUpperCase().slice(0,5))>=0) return SPECS[i].key;
-    if(up.indexOf('CARP')>=0) return 'CARP';
-    if(up.indexOf('STEEL')>=0||up.indexOf('FIX')>=0||up.indexOf('FITTER')>=0) return 'STEEL';
-    if(up.indexOf('HELP')>=0) return 'HELP';
-    if(up.indexOf('FINISH')>=0) return 'FINISH';
+    if(up.indexOf('CARP')>=0||up==='BUILDER') return 'CARP';
+    if(up.indexOf('STEEL')>=0||up.indexOf('FIX')>=0||up.indexOf('FITTER')>=0||up.indexOf('RIGGER')>=0) return 'STEEL';
+    if(up.indexOf('HELP')>=0||up.indexOf('HANDLER')>=0||up.indexOf('STORE')>=0||up.indexOf('TRAFFIC')>=0||up.indexOf('GUARD')>=0||up.indexOf('DRIVER')>=0||up.indexOf('LOGISTIC')>=0||up.indexOf('MA')===0) return 'HELP';
+    if(up.indexOf('FINISH')>=0||up.indexOf('TILE')>=0||up.indexOf('PLAST')>=0) return 'FINISH';
     if(up.indexOf('DRY')>=0) return 'DRY';
     if(up.indexOf('ELECT')>=0) return 'HELP';
-    if(up==='TL'||up==='TEAM LEADER') return '';
+    if(up.indexOf('PLUMB')>=0) return 'HELP';
+    if(up.indexOf('DUCT')>=0||up.indexOf('PIPE')>=0||up.indexOf('MECH')>=0) return 'HELP';
+    if(up.indexOf('CRANE')>=0||up.indexOf('HOIST')>=0||up.indexOf('BOBCAT')>=0||up.indexOf('FORKLIFT')>=0) return 'HELP';
+    if(up==='TL'||up==='TEAM LEADER'||up==='FOREMAN'||up.indexOf('SUPERVISOR')>=0||up.indexOf('OFFICER')>=0) return '';
     return '';
   }
 
@@ -2819,6 +2829,8 @@ function importWorkers(rows){
     name=name.trim();
     if(!name||name.charAt(0)==='='||(!isNaN(+name)&&name.length<5)) {skipped++;continue;}
     if(name.length<2){skipped++;continue;}
+    /* Skip rows where all key fields are empty (blank rows mid-file) */
+    if(!name&&!workerId&&!coName&&!specRaw){skipped++;continue;}
 
     /* Worker ID */
     var workerId='';
@@ -4061,9 +4073,15 @@ function renderWorkersPage(){
     html+='<tr data-wid="'+wk.id+'"'+(isSel?' class="wk-selected"':'')+'>'; 
     html+='<td style="text-align:center"><input class="wk-cb" type="checkbox" data-wid="'+wk.id+'" '+(isSel?'checked':'')+' onchange="wkCbChange(this)"></td>';
     html+='<td style="font-family:var(--mono);font-size:10px;color:var(--tx3)">'+(wk.workerId||'—')+'</td>';
-    html+='<td style="font-weight:600">'+wk.name+'</td>';
-    html+='<td>'+coName+'</td>';
-    html+='<td>'+(sl?'<span class="spsel sk-'+wk.spec+'" style="cursor:default;font-size:10px">'+sl+'</span>':'')+'</td>';
+    html+='<td style="font-weight:600;cursor:pointer" onclick="wkEditField(event,\''+wk.id+'\',\'name\')">'+wk.name+'</td>';
+    /* Company — badge select */
+    var wcoCO='<option value="">—</option>';
+    for(var ci3=0;ci3<S.companies.length;ci3++) wcoCO+='<option value="'+S.companies[ci3].id+'"'+(wk.companyId===S.companies[ci3].id?' selected':'')+'>'+S.companies[ci3].name+'</option>';
+    html+='<td><div class="co-sel-wrap" style="font-size:11px"><span class="co-badge" style="background:'+(co&&co.bg?co.bg:'var(--bg2)')+';color:'+(co&&co.co?co.co:'var(--tx3)')+'">'+(coName||'—')+'</span><select onchange="wkFieldSave(\''+wk.id+'\',\'companyId\',this.value)">'+wcoCO+'</select></div></td>';
+    /* Specialty — badge select */
+    var wspO='<option value="">—</option>';
+    for(var si3=0;si3<SPECS.length;si3++) wspO+='<option value="'+SPECS[si3].key+'"'+(wk.spec===SPECS[si3].key?' selected':'')+'>'+SPECS[si3].label+'</option>';
+    html+='<td><div class="co-sel-wrap" style="font-size:11px"><span class="spsel sk-'+wk.spec+'" style="cursor:pointer">'+(sl||'—')+'</span><select onchange="wkFieldSave(\''+wk.id+'\',\'spec\',this.value)">'+wspO+'</select></div></td>';
     var ds=wk.dateDebut?new Date(wk.dateDebut).toLocaleDateString('fr-FR'):'';
     var de=effectiveEnd(wk)?new Date(effectiveEnd(wk)).toLocaleDateString('fr-FR'):'';
     html+='<td style="font-size:10px;color:var(--tx3)">'+ds+'</td>';
@@ -4071,8 +4089,11 @@ function renderWorkersPage(){
     html+='<td>'+stBadge+'</td>';
     /* Rating + Comment — visible before scrolling right */
     var ratingColor={'Very Good':'var(--green)','Good':'var(--blue)','Average':'var(--amber)','Bad':'var(--red)'}[wk.rating||'']||'var(--tx3)';
-    html+='<td style="font-size:10px;font-weight:700;color:'+ratingColor+';white-space:nowrap">'+(wk.rating||'—')+'</td>';
-    html+='<td style="font-size:10px;color:var(--tx3);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+(wk.comment||'')+'">'+(wk.comment||'')+'</td>';
+    /* Rating — inline select */
+    var wrtO=['','Very Good','Good','Average','Bad'].map(function(r){return '<option value="'+r+'"'+(wk.rating===r?' selected':'')+'>'+( r||'—')+'</option>';}).join('');
+    html+='<td><div class="co-sel-wrap"><span style="font-size:10px;font-weight:700;color:'+ratingColor+'">'+(wk.rating||'—')+'</span><select onchange="wkFieldSave(\''+wk.id+'\',\'rating\',this.value)">'+wrtO+'</select></div></td>';
+    /* Comment — click to edit inline */
+    html+='<td style="font-size:10px;color:var(--tx3);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer" title="'+(wk.comment||'Click to add comment')+'" onclick="wkEditField(event,\''+wk.id+'\',\'comment\')">'+( wk.comment||'<span style="color:var(--border2)">add comment</span>')+'</td>';
     /* Month dots */
     for(var m=0;m<NM;m++){
       var sl2=ML[m]; if(!sl2) continue;
@@ -4091,6 +4112,35 @@ function renderWorkersPage(){
   setTimeout(function(){restoreScrollState(_scroll);},0);
 }
 
+
+
+function wkFieldSave(wkId,field,val){
+  for(var i=0;i<S.workers.length;i++){
+    if(S.workers[i].id===wkId){
+      S.workers[i][field]=val;
+      break;
+    }
+  }
+  saveS(); renderWorkersPage();
+}
+
+function wkEditField(e,wkId,field){
+  e.stopPropagation();
+  var td=e.currentTarget;
+  var wk=null; for(var i=0;i<S.workers.length;i++) if(S.workers[i].id===wkId){wk=S.workers[i];break;}
+  if(!wk) return;
+  var cur=wk[field]||'';
+  var inp=document.createElement(field==='comment'?'textarea':'input');
+  inp.value=cur;
+  inp.style.cssText='width:100%;font-family:var(--font);font-size:11px;border:1.5px solid var(--blue);border-radius:4px;padding:2px 6px;outline:none;'+(field==='comment'?'resize:none;height:40px':'');
+  td.innerHTML=''; td.appendChild(inp); inp.focus(); inp.select();
+  function save(){
+    var v=inp.value.trim();
+    wkFieldSave(wkId,field,v);
+  }
+  inp.addEventListener('blur',save);
+  inp.addEventListener('keydown',function(e2){if(e2.key==='Enter'&&field!=='comment'){e2.preventDefault();save();}if(e2.key==='Escape'){renderWorkersPage();}});
+}
 
 function wkSetFilter(type,val){
   if(type==='co') window._wkFilterCo=val;
