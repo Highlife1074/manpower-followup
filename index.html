@@ -321,11 +321,11 @@ input.wk-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .as-grid{overflow:auto;flex:1;min-height:0;}
 .as-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:11px;}
 .as-table th{background:var(--bg2);padding:5px 8px;border-bottom:2px solid var(--border2);border-right:1px solid var(--border);font-size:10px;font-weight:700;color:var(--tx3);white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;z-index:5;}
-.as-table th.ap1{position:sticky;left:0;z-index:10;text-align:left;min-width:200px;}
-.as-table th.ap2{position:sticky;left:200px;z-index:10;min-width:90px;}
+.as-table th.ap1{position:sticky;left:0;z-index:10;text-align:left;min-width:200px;background:var(--bg2);}
+.as-table th.ap2{position:sticky;left:200px;z-index:10;min-width:90px;background:var(--bg2);}
 .as-table td{border-bottom:1px solid var(--border);border-right:1px solid var(--border);padding:0;vertical-align:top;}
-.as-table td.ap1{position:sticky;left:0;z-index:4;background:var(--white);padding:4px 8px;font-weight:600;font-size:11px;}
-.as-table td.ap2{position:sticky;left:200px;z-index:4;background:var(--white);padding:4px 8px;text-align:right;}
+.as-table td.ap1{position:sticky;left:0;z-index:4;background:var(--white);padding:4px 8px;font-weight:600;font-size:11px;min-width:200px;}
+.as-table td.ap2{position:sticky;left:200px;z-index:4;background:var(--white);padding:4px 8px;text-align:right;min-width:70px;}
 .as-cell{min-width:64px;min-height:36px;padding:3px 6px;position:relative;display:flex;align-items:center;justify-content:center;}
 .as-count{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--tx2);text-align:center;line-height:1.2;}
 .as-count .n-ass{color:var(--green);}
@@ -4777,12 +4777,12 @@ function renderAssignmentsPage(){
 
   html+='<div class="as-grid" style="flex:1;overflow:auto;min-height:0">';
   html+='<table class="as-table"><thead><tr>';
-  html+='<th class="ap1" style="position:sticky;left:0;z-index:25;background:var(--bg2)">WBS</th>';
-  html+='<th class="ap2" style="position:sticky;left:200px;z-index:25;background:var(--bg2);min-width:60px">Budget</th>';
+  html+='<th class="ap1">WBS</th>';
+  html+='<th class="ap2">Budget</th>';
   for(var m=startCol;m<NM;m++){
     var ml2=ML[m]?ML[m].short:MS[m];
     var isCur2=(m===page);
-    var thBg=isCur2?'rgba(61,90,128,.12)':m<S.ccM?'var(--bg2)':'transparent';
+    var thBg=isCur2?'rgba(61,90,128,.12)':m<S.ccM?'var(--bg2)':'var(--white)';
     var thCol=isCur2?'var(--blue)':m<S.ccM?'var(--tx3)':'var(--tx2)';
     html+='<th style="min-width:80px;text-align:center;background:'+thBg+';color:'+thCol+';cursor:pointer;border-left:'+(isCur2?'2px solid var(--blue)':'')+'" onclick="asSelectCol('+m+')">';
     html+=ml2;
@@ -4796,7 +4796,7 @@ function renderAssignmentsPage(){
   for(var gi=0;gi<S.groups.length;gi++){
     var g=S.groups[gi];
     if(gi>0) html+='<tr class="group-sep-row"><td colspan="'+(2+(NM-startCol))+'"></td></tr>';
-    html+='<tr class="rgroup"><td class="ap1" colspan="'+(2+(NM-startCol))+'" style="position:sticky;left:0">';
+    html+='<tr class="rgroup"><td class="ap1" colspan="'+(2+(NM-startCol))+'">';
     html+='<span class="tog" onclick="toggleGroup(\''+g.id+'\')"><span>'+(g.col?'▶':'▼')+'</span></span> ';
     html+='<span style="font-weight:800;font-size:12px">'+g.name.toUpperCase()+'</span></td></tr>';
     if(g.col) continue;
@@ -4806,7 +4806,7 @@ function renderAssignmentsPage(){
       var sgWBS=S.wbs.filter(function(w){return w.parentId===sg.id;});
       if(!sgWBS.length) continue;
       html+='<tr class="sg-sep-row"><td colspan="'+(2+(NM-startCol))+'"></td></tr>';
-      html+='<tr class="rsg"><td class="ap1" colspan="'+(2+(NM-startCol))+'" style="position:sticky;left:0">';
+      html+='<tr class="rsg"><td class="ap1" colspan="'+(2+(NM-startCol))+'">';
       html+='<span class="tog" onclick="toggleSG(\''+sg.id+'\')">▼</span> ';
       html+='<span style="font-size:13px;font-weight:800;color:#4a3a80">◆ '+sg.name+'</span></td></tr>';
       if(sg.col) continue;
@@ -4826,10 +4826,10 @@ function asWBSRow(wbs,ind,startCol,page){
   var budTotal=wbsTotalBudget(wbs);
   var wbsSel=window._asSel&&window._asSel[wbs.id]?window._asSel[wbs.id]:{};
   var h='<tr>';
-  h+='<td class="ap1" style="position:sticky;left:0;background:var(--white);z-index:10;padding-left:'+ind+'px;font-weight:600;font-size:11px">';
+  h+='<td class="ap1" style="padding-left:'+ind+'px">';
   if(wbs.code) h+='<span class="codb" style="font-size:9px">'+wbs.code+'</span> ';
   h+=(wbs.name||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</td>';
-  h+='<td class="ap2" style="position:sticky;left:200px;background:var(--white);z-index:10;font-family:var(--mono);font-size:11px;color:var(--blue);text-align:right">'+(budTotal?budTotal.toFixed(1):'')+'</td>';
+  h+='<td class="ap2" style="font-family:var(--mono);font-size:11px;color:var(--blue)">'+(budTotal?budTotal.toFixed(1):'')+'</td>';
 
   for(var m=startCol;m<NM;m++){
     var budHM=bud(wbs,m);
