@@ -2696,7 +2696,7 @@ function importWorkers(rows){
     var joined=row.map(function(v){return (v||'').toString().toLowerCase();}).join('|');
     var hits=keywords.filter(function(k){return joined.indexOf(k)>=0;}).length;
     if(hits>=1){
-      header=row.map(function(h){return (h||'').toString().trim().toLowerCase();});
+      header=row.map(function(h){return (h||'').toString().trim().toLowerCase().replace(/\s+/g,' ');});
       headerIdx=hi; break;
     }
   }
@@ -2731,13 +2731,21 @@ function importWorkers(rows){
   var isBIK=(header.indexOf('last name')>=0&&header.indexOf('first name')>=0);
   var ciFirst=-1, ciLast=-1, ciName=-1;
   var ciPos=col(['position','poste','role','job title','title']); /* position = specialty */
+  /* BIK Detail format also has company, contract dates, employee code */
+  if(ciId<0) ciId=col(['employee code','code','matricule','staff id','badge']);
+  if(ciCo<0) ciCo=col(['company','entreprise','societe']);
+  if(ciStart<0) ciStart=col(['contract start date','start date','engagement date','date debut','debut']);
+  if(ciEnd<0) ciEnd=col(['contract end date','disengagement date','end date','date fin']);
 
   if(isDSS){
     /* DSS: col A=lastname, col H=firstname */
     ciLast=0; ciFirst=7;
   } else if(isBIK){
     ciLast=header.indexOf('last name');
+    /* trim trailing spaces in header keys */
+    if(ciLast<0) ciLast=header.findIndex(function(h){return h&&h.trim()==='last name';});
     ciFirst=header.indexOf('first name');
+    if(ciFirst<0) ciFirst=header.findIndex(function(h){return h&&h.trim()==='first name';});
     if(ciSpec<0) ciSpec=ciPos; /* use position as specialty */
   } else {
     /* Generic detection */
