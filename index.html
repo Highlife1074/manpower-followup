@@ -2803,6 +2803,8 @@ function importWorkers(rows){
   function matchSpec(raw){
     if(!raw) return '';
     var up=raw.trim().toUpperCase().replace(/\s+/g,' ');
+    /* Check user-defined mapping first */
+    if(window._specMapping&&window._specMapping[raw.trim()]) return window._specMapping[raw.trim()];
     for(var i=0;i<SPECS.length;i++) if(SPECS[i].key.toUpperCase()===up||SPECS[i].label.toUpperCase()===up) return SPECS[i].key;
     for(var i=0;i<SPECS.length;i++) if(up.indexOf(SPECS[i].key.toUpperCase())>=0||up.indexOf(SPECS[i].label.toUpperCase().slice(0,5))>=0) return SPECS[i].key;
     if(up.indexOf('CARP')>=0||up==='BUILDER') return 'CARP';
@@ -2818,7 +2820,7 @@ function importWorkers(rows){
     return '';
   }
 
-  var imported=0,updated=0,skipped=0,noCoMatch=[],changedWorkers=[];
+  var imported=0,updated=0,skipped=0,noCoMatch=[],changedWorkers=[],unmappedSpecs={};
 
   for(var ri=headerIdx+1;ri<rows.length;ri++){
     var row=rows[ri];
@@ -2860,8 +2862,13 @@ function importWorkers(rows){
     if(!co&&coName&&noCoMatch.indexOf(coName)<0) noCoMatch.push(coName);
 
     /* Specialty */
-    var specRaw=ciSpec>=0?(row[ciSpec]||'').toString():'';
+    var specRaw=ciSpec>=0?(row[ciSpec]||'').toString().trim():'';
     var specKey=matchSpec(specRaw);
+    /* Track unmapped specialties */
+    if(specRaw&&!specKey){
+      if(!unmappedSpecs[specRaw]) unmappedSpecs[specRaw]=0;
+      unmappedSpecs[specRaw]++;
+    }
 
     /* Auto PU */
     var pu2=companyId&&specKey?getPU(companyId,specKey)||0:0;
@@ -2897,6 +2904,16 @@ function importWorkers(rows){
     }
   }
 
+  /* Check for unmapped specialties */
+  var unmappedList=Object.keys(unmappedSpecs);
+  if(unmappedList.length>0){
+    /* Store pending workers for after spec resolution */
+    window._pendingImport={workers:S.workers.slice(),assignments:S.assignments.slice(),
+      changedWorkers:changedWorkers,imported:imported,updated:updated,skipped:skipped,noCoMatch:noCoMatch,
+      unmappedSpecs:unmappedSpecs,unmappedList:unmappedList};
+    showSpecMappingDialog(unmappedList,unmappedSpecs);
+    return;
+  }
   if(changedWorkers.length>0){showImportConflictDialog(changedWorkers,imported,updated,skipped,noCoMatch);return;}
   saveS();render();
   var msg='Import: '+imported+' new, '+updated+' updated'+(skipped?' ('+skipped+' skipped)':'');
@@ -2904,6 +2921,152 @@ function importWorkers(rows){
   showToast(msg,'ok');
 }
 
+
+
+/* ---- Specialty mapping dialog ---- */
+function showSpecMappingDialog(unmappedList,unmappedSpecs){
+  var box=document.getElementById('mbox');
+  box.className='modal';
+  document.getElementById('mbg').className='mbg';
+
+  var h='<h3>&#128218; Unmapped Specialties</h3>';
+  h+='<p style="font-size:12px;color:var(--tx2);margin-bottom:12px">The following specialties from the import file were not recognized. For each, choose to <strong>create a new specialty</strong> or <strong>map to an existing one</strong>.</p>';
+
+  unmappedList.forEach(function(raw){
+    var count=unmappedSpecs[raw];
+    var safeId='spec_'+raw.replace(/[^a-zA-Z0-9]/g,'_');
+    h+='<div style="background:var(--bg2);border-radius:8px;padding:10px 12px;margin-bottom:8px">';
+    h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
+    h+='<span style="font-weight:700;font-size:12px">'+raw+'</span>';
+    h+='<span style="font-size:10px;color:var(--tx3)">('+count+' worker'+(count>1?'s':'')+')</span>';
+    h+='</div>';
+    h+='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">';
+    /* Map to existing */
+    h+='<select id="map_'+safeId+'" style="font-size:11px;padding:4px 8px;border:1.5px solid var(--border2);border-radius:7px">';
+    h+='<option value="">— Map to existing —</option>';
+    for(var i=0;i<SPECS.length;i++) h+='<option value="'+SPECS[i].key+'">'+SPECS[i].label+'</option>';
+    h+='</select>';
+    h+='<span style="font-size:11px;color:var(--tx3)">or</span>';
+    /* Create new */
+    h+='<label style="display:flex;align-items:center;gap:4px;font-size:11px">';
+    h+='<input type="checkbox" id="new_'+safeId+'" onchange="specDialogToggle(\''+safeId+'\',this.checked)"> Create new</label>';
+    h+='<input type="text" id="key_'+safeId+'" placeholder="KEY (e.g. TILE)" style="width:90px;font-size:11px;display:none;padding:3px 7px;border:1.5px solid var(--blue);border-radius:6px;text-transform:uppercase">';
+    h+='<input type="text" id="label_'+safeId+'" placeholder="Label" style="width:120px;font-size:11px;display:none;padding:3px 7px;border:1.5px solid var(--blue);border-radius:6px" value="'+raw+'">';
+    h+='</div></div>';
+  });
+
+  h+='<div style="font-size:10px;color:var(--tx3);margin-top:4px">Leave unmapped specialties empty to skip them (workers imported without specialty).</div>';
+  h+='<div class="ma">';
+  h+='<button class="btn" onclick="specDialogCancel()">Cancel import</button>';
+  h+='<button class="btn pri" onclick="specDialogApply()">Apply & Continue Import</button>';
+  h+='</div>';
+
+  box.innerHTML=h;
+  document.getElementById('mbg').style.display='flex';
+}
+
+function specDialogToggle(safeId,checked){
+  document.getElementById('key_'+safeId).style.display=checked?'inline-block':'none';
+  document.getElementById('label_'+safeId).style.display=checked?'inline-block':'none';
+  if(checked){
+    /* Disable the map dropdown */
+    var mapSel=document.getElementById('map_'+safeId);
+    if(mapSel) mapSel.disabled=true;
+    /* Auto-suggest key from raw name */
+    var keyInp=document.getElementById('key_'+safeId);
+    if(keyInp&&!keyInp.value){
+      /* Extract first word, max 6 chars, uppercase */
+      var pending=window._pendingImport;
+      var rawList=pending?pending.unmappedList:[];
+      /* just use the safeId to reverse-engineer raw name from list */
+    }
+  } else {
+    var mapSel=document.getElementById('map_'+safeId);
+    if(mapSel) mapSel.disabled=false;
+  }
+}
+
+function specDialogCancel(){
+  /* Restore S to pre-import state if needed */
+  var pending=window._pendingImport;
+  if(pending){S.workers=pending.workers;S.assignments=pending.assignments;}
+  window._pendingImport=null;
+  closeModal();
+  showToast('Import cancelled','warn');
+}
+
+function specDialogApply(){
+  var pending=window._pendingImport;
+  if(!pending){closeModal();return;}
+
+  /* Build mapping: raw → specKey */
+  var mapping={};
+  pending.unmappedList.forEach(function(raw){
+    var safeId='spec_'+raw.replace(/[^a-zA-Z0-9]/g,'_');
+    var isNew=document.getElementById('new_'+safeId)&&document.getElementById('new_'+safeId).checked;
+    if(isNew){
+      var key=(document.getElementById('key_'+safeId).value||'').trim().toUpperCase().replace(/\s+/g,'_');
+      var label=(document.getElementById('label_'+safeId).value||raw).trim();
+      if(key&&label){
+        /* Create new specialty */
+        if(!S.specs.some(function(s){return s.key===key;})){
+          S.specs.push({key:key,label:label});
+          refreshSpecsFromS();
+        }
+        mapping[raw]=key;
+      }
+    } else {
+      var mapVal=document.getElementById('map_'+safeId)&&document.getElementById('map_'+safeId).value;
+      if(mapVal) mapping[raw]=mapVal;
+    }
+  });
+
+  /* Apply mapping to workers that have raw spec stored — need to re-run import
+     Actually, we need to re-import with the mapping applied.
+     Simpler: find all workers with spec='' and try to match their stored raw spec.
+     But we didn't store raw spec on worker. 
+     Solution: re-run importWorkers with the mapping override */
+  window._specMapping=mapping;
+  window._pendingImport=null;
+  closeModal();
+
+  /* Trigger re-import with mapping — reload the file */
+  showToast('Specialty mapping applied — re-importing...','ok');
+  var fileInput=document.getElementById('xlsxInput');
+  if(fileInput&&fileInput.files&&fileInput.files[0]){
+    handleXLSXWithMapping(fileInput.files[0],mapping);
+  } else {
+    showToast('Please re-upload the file','warn');
+  }
+}
+
+function handleXLSXWithMapping(file,mapping){
+  if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var data=new Uint8Array(e.target.result);
+      var wb=XLSX.read(data,{type:'array',cellDates:true,raw:true});
+      var keywords=['last name','first name','name','surname','position','employee','worker'];
+      var bestRows=null,bestScore=0;
+      wb.SheetNames.forEach(function(sn){
+        var ws2=wb.Sheets[sn];
+        var r2=XLSX.utils.sheet_to_json(ws2,{header:1,raw:true,defval:null});
+        for(var hi=0;hi<Math.min(8,r2.length);hi++){
+          var row2=r2[hi]; if(!row2||!row2.length) continue;
+          var joined=row2.map(function(v){return (v||'').toString().toLowerCase();}).join('|');
+          var score=keywords.filter(function(k){return joined.indexOf(k)>=0;}).length;
+          if(score>bestScore){bestScore=score;bestRows=r2;}
+        }
+      });
+      if(!bestRows){var ws=wb.Sheets[wb.SheetNames[0]];bestRows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});}
+      window._specMapping=mapping;
+      importWorkers(bestRows);
+      window._specMapping=null;
+    }catch(err){alert('Error: '+err.message);}
+  };
+  reader.readAsArrayBuffer(file);
+}
 
 /* ---- Import conflict dialog ---- */
 function showImportConflictDialog(conflicts,imported,updated,skipped,noCoMatch){
