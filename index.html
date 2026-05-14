@@ -4349,20 +4349,6 @@ function renderWorkersPage(){
   html+='<select style="font-size:12px;padding:5px 8px;border:1.5px solid var(--border2);border-radius:7px" onchange="wkSetFilter(\'cat\',this.value)">'+catOpts+'</select>';
   html+='<button class="btn soft" style="font-size:11px" onclick="wkToggleSort()">A→Z '+(window._wkSort?'▲':'▼')+'</button>';
   html+='<button class="btn soft" style="font-size:11px" onclick="openWkCategoriesModal()">&#127991; Categories</button>';
-  /* End-of-mission month filter */
-  var eomOpts='<option value="">All end months</option>';
-  var eomMonths={};
-  for(var ei=0;ei<S.workers.length;ei++){
-    var ewk=S.workers[ei];
-    /* Last assigned month */
-    var lastSlot=-1;
-    for(var em2=NM-1;em2>=0;em2--){var ea=getAssignmentSlot(ewk.id,em2);if(ea){lastSlot=em2;break;}}
-    if(lastSlot>=0&&ML[lastSlot]) eomMonths[lastSlot]=ML[lastSlot].short;
-  }
-  Object.keys(eomMonths).sort(function(a,b){return+a-+b;}).forEach(function(k){
-    eomOpts+='<option value="'+k+'"'+(window._wkFilterEOM===+k?' selected':'')+'>Until '+eomMonths[k]+'</option>';
-  });
-  html+='<select style="font-size:12px;padding:5px 8px;border:1.5px solid var(--border2);border-radius:7px" onchange="wkSetFilter(\'eom\',this.value)">'+eomOpts+'</select>';
   html+='<span style="font-size:11px;color:var(--tx3);margin-left:4px">'+S.workers.length+' workers</span>';
   html+='<button class="btn pri" style="margin-left:auto" onclick="openWorkerModal(null)">&#10133; Add Worker</button>';
   html+='</div>';
@@ -4399,11 +4385,6 @@ function renderWorkersPage(){
     if(filterSpec&&wk.spec!==filterSpec) continue;
     if(filterRating&&(wk.rating||'')!==filterRating) continue;
     if(filterCat&&(wk.category||'')!==filterCat) continue;
-    if(window._wkFilterEOM!==undefined&&window._wkFilterEOM!==''){
-      var _lastSlot=-1;
-      for(var _em=NM-1;_em>=0;_em--){var _ea=getAssignmentSlot(wk.id,_em);if(_ea){_lastSlot=_em;break;}}
-      if(_lastSlot!==+window._wkFilterEOM) continue;
-    }
     var gst=workerGlobalStatus(wk);
     var stBadge='';
     if(gst==='active') stBadge='<span class="sb sb-ok">Active</span>';
@@ -4447,23 +4428,14 @@ function renderWorkersPage(){
     html+='<td style="font-size:10px;color:var(--tx2);cursor:pointer;white-space:nowrap" onclick="wkEditField(event,\''+wk.id+'\',\'responsible\')">'+( wk.responsible||'<span style="color:var(--border2)">—</span>')+'</td>';
     /* Comment — click to edit inline */
     html+='<td style="font-size:10px;color:var(--tx3);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer" title="'+(wk.comment||'Click to add comment')+'" onclick="wkEditField(event,\''+wk.id+'\',\'comment\')">'+( wk.comment||'<span style="color:var(--border2)">add comment</span>')+'</td>';
-    /* Month cells — WBS name if assigned, clickable to reassign */
+    /* Month dots */
     for(var m=0;m<NM;m++){
       var sl2=ML[m]; if(!sl2) continue;
       var active2=workerActiveInMonth(wk,sl2.month,sl2.year);
       var asgn2=getAssignmentSlot(wk.id,m);
-      var cellContent='';
-      if(asgn2){
-        var wbsName2='';
-        for(var wi2=0;wi2<S.wbs.length;wi2++) if(S.wbs[wi2].id===asgn2.wbsId){wbsName2=S.wbs[wi2].name;break;}
-        var tipTxt=wbsName2.replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-        cellContent='<span style="font-size:9px;background:var(--gl);color:var(--green);padding:1px 5px;border-radius:8px;white-space:nowrap;display:inline-block;max-width:90px;overflow:hidden;text-overflow:ellipsis;cursor:pointer" title="'+tipTxt+'" onclick="wkCellClick(event,\''+wk.id+'\','+m+')">'+wbsName2+'</span>';
-      } else if(active2){
-        cellContent='<span style="font-size:9px;color:var(--border2);cursor:pointer" onclick="wkCellClick(event,\''+wk.id+'\','+m+')" title="Assign to WBS">+</span>';
-      } else {
-        cellContent='<span style="font-size:9px;color:var(--rl)">—</span>';
-      }
-      html+='<td style="text-align:center;padding:2px 3px;max-width:100px;overflow:hidden" data-wkid="'+wk.id+'" data-wkm="'+m+'">'+cellContent+'</td>';
+      var dot=asgn2?'&#9679;':active2?'·':'';
+      var col2=asgn2?'color:var(--green)':active2?'color:var(--border2)':'color:var(--rl)';
+      html+='<td style="text-align:center;font-size:10px;'+col2+'">'+dot+'</td>';
     }
     html+='<td style="white-space:nowrap"><button class="bic" onclick="openWorkerModal(\''+wk.id+'\')">e</button> <button class="bic del" onclick="deleteWorker(\''+wk.id+'\')">x</button></td>';
     html+='</tr>';
@@ -4621,153 +4593,11 @@ function wkUpdateCell(td,wkId,field,val){
   }
 }
 
-
-/* ============================================================
-   WORKER TABLE CELL CLICK — assign/reassign via WBS picker
-   ============================================================ */
-window._wkCellSel = {}; /* {wkId_m: true} — selected cells in worker table */
-
-function wkCellClick(e,wkId,m){
-  e.stopPropagation();
-  /* Toggle selection */
-  var key=wkId+'_'+m;
-  if(window._wkCellSel[key]) delete window._wkCellSel[key];
-  else window._wkCellSel[key]=true;
-  /* Highlight selected cells */
-  var nSel=Object.keys(window._wkCellSel).length;
-  /* Re-render just the status bar without full re-render */
-  wkUpdateCellSelBar(nSel);
-  /* Color the clicked cell */
-  var td=e.currentTarget.closest('td');
-  if(td){
-    var isNowSel=!!window._wkCellSel[key];
-    td.style.background=isNowSel?'rgba(61,90,128,.15)':'';
-    td.style.outline=isNowSel?'2px solid var(--blue)':'';
-  }
-}
-
-function wkUpdateCellSelBar(nSel){
-  var bar=document.getElementById('wkCellSelBar');
-  if(!bar){
-    /* Create bar above table */
-    if(nSel===0) return;
-    var filterDiv=document.querySelector('#pageContent > div');
-    if(!filterDiv) return;
-    bar=document.createElement('div');
-    bar.id='wkCellSelBar';
-    bar.style.cssText='display:flex;align-items:center;gap:8px;padding:6px 14px;background:var(--blue);color:#fff;font-size:12px;font-weight:600;flex-shrink:0;';
-    bar.innerHTML='<span id="wkCellSelCount">0</span> cell(s) selected &nbsp;·&nbsp; '+
-      '<button onclick="wkCellAssign()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:3px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700">Assign to WBS</button> '+
-      '<button onclick="wkCellRemove()" style="background:rgba(168,64,64,.5);border:1px solid rgba(255,150,150,.4);color:#fff;padding:3px 10px;border-radius:6px;cursor:pointer;font-size:11px">Remove assignment</button> '+
-      '<button onclick="wkCellClear()" style="background:none;border:1px solid rgba(255,255,255,.3);color:#fff;padding:3px 8px;border-radius:6px;cursor:pointer;font-size:11px">✕ Clear</button>';
-    filterDiv.parentNode.insertBefore(bar, filterDiv.nextSibling);
-  }
-  if(nSel===0){if(bar)bar.remove();return;}
-  var cnt=bar.querySelector('#wkCellSelCount');
-  if(cnt) cnt.textContent=nSel;
-}
-
-function wkCellClear(){
-  window._wkCellSel={};
-  /* Remove highlights */
-  document.querySelectorAll('td[data-wkid]').forEach(function(td){
-    td.style.background=''; td.style.outline='';
-  });
-  var bar=document.getElementById('wkCellSelBar');
-  if(bar) bar.remove();
-}
-
-function wkCellRemove(){
-  var keys=Object.keys(window._wkCellSel);
-  if(!keys.length) return;
-  keys.forEach(function(key){
-    var parts=key.split('_'); var wkId=parts.slice(0,-1).join('_'); var m=+parts[parts.length-1];
-    var sl=ML[m]; if(!sl) return;
-    S.assignments=S.assignments.filter(function(a){
-      return !(a.workerId===wkId&&a.month===sl.month&&a.year===sl.year);
-    });
-  });
-  window._wkCellSel={};
-  saveS();
-  showToast('Assignments removed','ok');
-  renderWorkersPage();
-}
-
-function wkCellAssign(){
-  var keys=Object.keys(window._wkCellSel);
-  if(!keys.length) return;
-  /* Build a list of {wkId, month} pairs */
-  var cellPairs=keys.map(function(key){
-    var parts=key.split('_'); var wkId=parts.slice(0,-1).join('_'); var m=+parts[parts.length-1];
-    return{wkId:wkId,month:m};
-  });
-  /* Open WBS selection modal */
-  openWBSPickerForWorkers(cellPairs);
-}
-
-function openWBSPickerForWorkers(cellPairs){
-  var box=document.getElementById('mbox');
-  box.className='modal';
-  document.getElementById('mbg').style.display='flex';
-  document.getElementById('mbg').className='mbg';
-
-  /* Unique months */
-  var months=[...new Set(cellPairs.map(function(p){return p.month;}))].sort(function(a,b){return a-b;});
-  var monthLabels=months.map(function(m){return ML[m]?ML[m].short:MS[m];}).join(', ');
-  var nWorkers=[...new Set(cellPairs.map(function(p){return p.wkId;}))].length;
-
-  var h='<h3>&#128203; Assign to WBS</h3>';
-  h+='<p style="font-size:12px;color:var(--tx2);margin-bottom:12px">'+nWorkers+' worker(s) · '+monthLabels+'</p>';
-  h+='<div style="max-height:360px;overflow-y:auto">';
-
-  /* Group WBS by group */
-  for(var gi=0;gi<S.groups.length;gi++){
-    var g=S.groups[gi];
-    var allGW=[];
-    S.wbs.filter(function(w){return w.parentId===g.id;}).forEach(function(w){allGW.push(w);});
-    for(var si=0;si<g.sub.length;si++) S.wbs.filter(function(w){return w.parentId===g.sub[si].id;}).forEach(function(w){allGW.push(w);});
-    if(!allGW.length) continue;
-    h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;padding:6px 0 3px;letter-spacing:.05em">'+g.name+'</div>';
-    allGW.forEach(function(wbs){
-      h+='<div onclick="wkCellApplyWBS(\''+wbs.id+'\')" style="padding:7px 10px;border-radius:7px;cursor:pointer;border:1.5px solid var(--border2);margin-bottom:4px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background=\'var(--bl)\'" onmouseout="this.style.background=\'\'">';
-      if(wbs.code) h+='<span style="font-size:9px;background:var(--bg2);padding:1px 5px;border-radius:4px;font-family:var(--mono)">'+wbs.code+'</span>';
-      h+='<span style="font-weight:600;font-size:12px">'+wbs.name+'</span>';
-      h+='</div>';
-    });
-  }
-  h+='</div>';
-  h+='<div class="ma"><button class="btn" onclick="closeModal()">Cancel</button></div>';
-  box.innerHTML=h;
-  /* Store pairs for the apply step */
-  window._wkCellPairs=cellPairs;
-}
-
-function wkCellApplyWBS(wbsId){
-  var pairs=window._wkCellPairs||[];
-  var added=0;
-  pairs.forEach(function(p){
-    var sl=ML[p.month]; if(!sl) return;
-    /* Remove existing assignment for this worker+month */
-    S.assignments=S.assignments.filter(function(a){
-      return !(a.workerId===p.wkId&&a.month===sl.month&&a.year===sl.year);
-    });
-    assignWorker(p.wkId,wbsId,p.month,false);
-    added++;
-  });
-  window._wkCellSel={};
-  window._wkCellPairs=[];
-  closeModal();
-  saveS();
-  showToast('+'+added+' assigned to WBS','ok');
-  renderWorkersPage();
-}
-
 function wkSetFilter(type,val){
   if(type==='co') window._wkFilterCo=val;
   else if(type==='spec') window._wkFilterSpec=val;
   else if(type==='rating') window._wkFilterRating=val;
   else if(type==='cat') window._wkFilterCat=val;
-  else if(type==='eom') window._wkFilterEOM=val===''?'':+val;
   renderWorkersPage();
 }
 function wkToggleSort(){window._wkSort=!window._wkSort;renderWorkersPage();}
@@ -5226,4 +5056,4 @@ function triggerWBSImport(){var el=document.getElementById('wbsImportInput');if(
 
 </script>
 </body>
-</html>
+  </html>
