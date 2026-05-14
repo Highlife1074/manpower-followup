@@ -843,7 +843,7 @@ function buildDefault(){
       {key:'FINISH',label:'Finishers'},
       {key:'DRY',label:'Dry Wall'}
     ],
-    settings:{startYear:2025,startMonth:0,endYear:2025,endMonth:11},asLocked:true
+    settings:{startYear:2025,startMonth:0,endYear:2025,endMonth:11},asLocked:true,workerCategories:[]
   };
 }
 
@@ -858,6 +858,7 @@ function migrate(s){
   for(var m=0;m<NM;m++){if(!s.cc[m])s.cc[m]={reel:{},rad:{},inv:{hrs:0,amt:0,note:''}};if(!s.cc[m].inv)s.cc[m].inv={hrs:0,hm:0,amt:0,note:''};if(s.cc[m].inv.hm===undefined)s.cc[m].inv.hm=0;}
   if(s.ccM===undefined)s.ccM=-1;
   if(s.asLocked===undefined)s.asLocked=true;
+  if(!s.workerCategories)s.workerCategories=[];
   if(!s.workers)s.workers=[];
   if(!s.assignments)s.assignments=[];
   if(!s.suggestions)s.suggestions=[];
@@ -873,6 +874,9 @@ function migrate(s){
     if(w.contractRef===undefined)w.contractRef='';
     if(w.comment===undefined)w.comment='';
     if(w.rating===undefined)w.rating='';
+    if(w.category===undefined)w.category='';
+    if(w.tarif===undefined)w.tarif=0;
+    if(w.responsible===undefined)w.responsible='';
     if(w.contractAmt===undefined)w.contractAmt=0;
   });
   s.assignments.forEach(function(a){if(a.isForeman===undefined)a.isForeman=false;});
@@ -950,7 +954,7 @@ function filterW(pid){return S.wbs.filter(function(w){return w.parentId===pid;})
    VIEW STATE
    ============================================================ */
 var VIEW='budget';
-var _botCollapsed={inv:false,bot:false};
+var _botCollapsed={inv:false,bot:false,grp:false};
 
 
 /* Track shift key for multi-select in assignments */
@@ -986,7 +990,9 @@ function asLockPast(){
 
 /* ── Real HM and EUR from assignments ── */
 function workerPU(wk){
-  /* PU of a worker = tariff of their company + specialty */
+  /* Personal rate overrides company rate */
+  if(wk.tarif&&wk.tarif>0) return+wk.tarif;
+  /* Otherwise: tariff from company + specialty */
   if(!wk.companyId||!wk.spec) return 0;
   return getPU(wk.companyId,wk.spec)||0;
 }
@@ -1467,7 +1473,7 @@ function renderCCPage(page){
 
   var tableHtml='<div class="tw"><table><thead>'+ccHead(page)+'</thead><tbody>'+ccBody(page)+'</tbody></table></div>';
   var invHtml=renderInvSection(page);
-  var botHtml=renderBotRecap(page);
+  var botHtml=renderGroupDetail(page);
 
   document.getElementById('pageContent').innerHTML=banner+tableHtml+invHtml+botHtml;
 }
@@ -1922,6 +1928,103 @@ function saveInvCo(page,coId,val){
 /* ============================================================
    BOTTOM RECAP TABLE (CC page)
    ============================================================ */
+
+/* ---- CC Group Detail Panel ---- */
+function renderGroupDetail(page){
+  var collapsed=_botCollapsed&&_botCollapsed.grp;
+  var h='<div class="bot-recap" style="'+(collapsed?'padding:6px 16px':'')+'">';
+  h+='<div class="bot-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="_botCollapsed.grp=!(_botCollapsed.grp);render()">';
+  h+='<span>&#128202; Cost Control by Group — '+(ML[page]?ML[page].label:(MS[page]+' '+YEAR))+'</span>';
+  h+='<span style="font-size:14px;color:var(--tx3)">'+(collapsed?'▶':'▼')+'</span>';
+  h+='</div>';
+  if(collapsed){h+='</div>';return h;}
+
+  h+='<table class="bot-table" style="width:100%">';
+  h+='<thead><tr>';
+  h+='<th>Group / Subgroup</th>';
+  h+='<th>Budget HM</th><th>Actual HM</th><th>ETC HM</th><th>EAC</th><th>Variance (month)</th><th>Variance (final)</th>';
+  h+='</tr></thead><tbody>';
+
+  var totB=0,totRC=0,totETC=0,totBcum=0;
+
+  for(var gi=0;gi<S.groups.length;gi++){
+    var g=S.groups[gi];
+    var allWBS=S.wbs.filter(function(w){return w.parentId===g.id;});
+    /* Also include subgroup WBS */
+    for(var si=0;si<g.sub.length;si++) S.wbs.filter(function(w){return w.parentId===g.sub[si].id;}).forEach(function(w){allWBS.push(w);});
+
+    if(!allWBS.length) continue;
+
+    /* Group totals */
+    var gB=0,gRC=0,gETC=0,gBcum=0;
+    allWBS.forEach(function(w){
+      gB+=addBudget(w);
+      gBcum+=budgetCumAtMonth(w,page);
+      for(var m=0;m<=page;m++) gRC+=reelHMFromAssign(w.id,m);
+      gETC+=etcHMFromAssign(w.id,page);
+    });
+    gB=+gB.toFixed(1);gRC=+gRC.toFixed(1);gETC=+gETC.toFixed(1);gBcum=+gBcum.toFixed(1);
+    var gEAC=+(gRC+gETC).toFixed(1);
+    var gVm=+(gBcum-gRC).toFixed(1);
+    var gVf=+(gB-gEAC).toFixed(1);
+    totB+=gB;totRC+=gRC;totETC+=gETC;totBcum+=gBcum;
+
+    h+='<tr style="background:rgba(240,90,0,.07)">';
+    h+='<td style="font-weight:800;font-size:12px;color:var(--ora)">'+g.name+'</td>';
+    h+='<td>'+gB.toFixed(1)+'</td>';
+    h+='<td style="color:var(--green)">'+gRC.toFixed(1)+'</td>';
+    h+='<td style="color:var(--ora)">'+gETC.toFixed(1)+'</td>';
+    h+='<td style="color:var(--yel)">'+gEAC.toFixed(1)+'</td>';
+    h+='<td class="'+pnc(gVm)+'" style="font-weight:700">'+(gVm>0?'+':'')+gVm.toFixed(1)+'</td>';
+    h+='<td class="'+pnc(gVf)+'" style="font-weight:700">'+(gVf>0?'+':'')+gVf.toFixed(1)+'</td>';
+    h+='</tr>';
+
+    /* Subgroups */
+    for(var si=0;si<g.sub.length;si++){
+      var sg=g.sub[si];
+      var sgWBS=S.wbs.filter(function(w){return w.parentId===sg.id;});
+      if(!sgWBS.length) continue;
+      var sB=0,sRC=0,sETC=0,sBcum=0;
+      sgWBS.forEach(function(w){
+        sB+=addBudget(w);sBcum+=budgetCumAtMonth(w,page);
+        for(var m=0;m<=page;m++) sRC+=reelHMFromAssign(w.id,m);
+        sETC+=etcHMFromAssign(w.id,page);
+      });
+      sB=+sB.toFixed(1);sRC=+sRC.toFixed(1);sETC=+sETC.toFixed(1);sBcum=+sBcum.toFixed(1);
+      var sEAC=+(sRC+sETC).toFixed(1);
+      var sVm=+(sBcum-sRC).toFixed(1);
+      var sVf=+(sB-sEAC).toFixed(1);
+
+      h+='<tr>';
+      h+='<td style="padding-left:22px;font-size:11px;color:#4a3a80;font-weight:700">◆ '+sg.name+'</td>';
+      h+='<td>'+sB.toFixed(1)+'</td>';
+      h+='<td style="color:var(--green)">'+sRC.toFixed(1)+'</td>';
+      h+='<td style="color:var(--ora)">'+sETC.toFixed(1)+'</td>';
+      h+='<td style="color:var(--yel)">'+sEAC.toFixed(1)+'</td>';
+      h+='<td class="'+pnc(sVm)+'">'+(sVm>0?'+':'')+sVm.toFixed(1)+'</td>';
+      h+='<td class="'+pnc(sVf)+'">'+(sVf>0?'+':'')+sVf.toFixed(1)+'</td>';
+      h+='</tr>';
+    }
+  }
+
+  /* Total row */
+  var tEAC=+(totRC+totETC).toFixed(1);
+  var tVm=+(totBcum-totRC).toFixed(1);
+  var tVf=+(totB-tEAC).toFixed(1);
+  h+='<tr style="background:#F05A00;color:#1a1a1a;font-weight:800">';
+  h+='<td>PROJECT TOTAL</td>';
+  h+='<td>'+totB.toFixed(1)+'</td>';
+  h+='<td>'+totRC.toFixed(1)+'</td>';
+  h+='<td>'+totETC.toFixed(1)+'</td>';
+  h+='<td>'+tEAC.toFixed(1)+'</td>';
+  h+='<td class="'+pnc(tVm)+'">'+(tVm>0?'+':'')+tVm.toFixed(1)+'</td>';
+  h+='<td class="'+pnc(tVf)+'">'+(tVf>0?'+':'')+tVf.toFixed(1)+'</td>';
+  h+='</tr>';
+
+  h+='</tbody></table></div>';
+  return h;
+}
+
 function renderBotRecap(page){
   var collapsed=_botCollapsed.bot;
   var h='<div class="bot-recap" style="'+(collapsed?'padding:6px 16px':'')+'">';
@@ -2904,9 +3007,12 @@ function importWorkers(rows){
     }
   }
 
-  /* Check for unmapped specialties */
-  var unmappedList=Object.keys(unmappedSpecs);
-  if(unmappedList.length>0){
+  /* Check for unmapped specialties — only show dialog if no mapping is already applied */
+  var unmappedList=Object.keys(unmappedSpecs).filter(function(raw){
+    /* Exclude specs that were explicitly mapped to '' (user chose to skip) */
+    return !(window._specMapping&&window._specMapping.hasOwnProperty(raw));
+  });
+  if(unmappedList.length>0&&!window._specMapping){
     /* Store pending workers for after spec resolution */
     window._pendingImport={workers:S.workers.slice(),assignments:S.assignments.slice(),
       changedWorkers:changedWorkers,imported:imported,updated:updated,skipped:skipped,noCoMatch:noCoMatch,
@@ -2915,6 +3021,7 @@ function importWorkers(rows){
     return;
   }
   if(changedWorkers.length>0){showImportConflictDialog(changedWorkers,imported,updated,skipped,noCoMatch);return;}
+  window._specMapping=null; /* clear mapping after successful import */
   saveS();render();
   var msg='Import: '+imported+' new, '+updated+' updated'+(skipped?' ('+skipped+' skipped)':'');
   if(noCoMatch.length) msg+='\nUnmatched companies: '+noCoMatch.slice(0,8).join(', ');
@@ -3005,19 +3112,20 @@ function specDialogApply(){
     var safeId='spec_'+raw.replace(/[^a-zA-Z0-9]/g,'_');
     var isNew=document.getElementById('new_'+safeId)&&document.getElementById('new_'+safeId).checked;
     if(isNew){
-      var key=(document.getElementById('key_'+safeId).value||'').trim().toUpperCase().replace(/\s+/g,'_');
+      var key=(document.getElementById('key_'+safeId).value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'_');
       var label=(document.getElementById('label_'+safeId).value||raw).trim();
       if(key&&label){
-        /* Create new specialty */
         if(!S.specs.some(function(s){return s.key===key;})){
           S.specs.push({key:key,label:label});
           refreshSpecsFromS();
         }
         mapping[raw]=key;
+      } else {
+        mapping[raw]=''; /* explicit skip */
       }
     } else {
       var mapVal=document.getElementById('map_'+safeId)&&document.getElementById('map_'+safeId).value;
-      if(mapVal) mapping[raw]=mapVal;
+      mapping[raw]=mapVal||''; /* always record — '' = skip */
     }
   });
 
@@ -3354,12 +3462,18 @@ function openWorkerPickerMulti(wbsId,months){
     h+='<div class="subtitle">'+months.length+' months selected: <strong>'+monthLabels+'</strong></div>';
     h+='</div>';
 
+    var availOnly=!!window._wkPickAvailOnly;
     h+='<div class="wk-pick-filters">';
     h+='<input type="text" id="wkPickFilter" placeholder="&#128269; Search..." value="'+ft+'" oninput="wkPickFilter(this.value)">';
+    /* Available only checkbox */
+    h+='<label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;cursor:pointer;padding:4px 10px;background:'+(availOnly?'var(--gl)':'var(--bg2)')+';border:1.5px solid '+(availOnly?'var(--gm)':'var(--border2)')+';border-radius:8px;user-select:none">';
+    h+='<input type="checkbox" id="wkAvailOnly" '+(availOnly?'checked':'')+' onchange="wkSetAvailOnly(this.checked)" style="width:15px;height:15px;accent-color:var(--green)">';
+    h+='<span style="color:'+(availOnly?'var(--green)':'var(--tx2)')+'">&#9989; Available only</span>';
+    h+='</label>';
     h+='<div class="wk-pick-legend">';
-    h+='<span><span class="ldot" style="background:var(--green);border:2px solid var(--gm)"></span>Available all months</span>';
-    h+='<span><span class="ldot" style="background:#fff7e0;border:2px solid var(--amber)"></span>Partial availability</span>';
-    h+='<span><span class="ldot" style="background:var(--rl);border:2px solid var(--red)"></span>Busy all months</span>';
+    h+='<span><span class="ldot" style="background:var(--green);border:2px solid var(--gm)"></span>Available</span>';
+    h+='<span><span class="ldot" style="background:#fff7e0;border:2px solid var(--amber)"></span>Partial</span>';
+    h+='<span><span class="ldot" style="background:var(--rl);border:2px solid var(--red)"></span>Busy / Assigned elsewhere</span>';
     h+='</div>';
     h+='<div class="wk-pick-fm-wrap"><input type="checkbox" id="wpFm" style="width:15px;height:15px;accent-color:var(--amber)"><label for="wpFm" style="cursor:pointer">&#9733; Foreman</label></div>';
     h+='</div>';
@@ -3394,7 +3508,7 @@ function openWorkerPickerMulti(wbsId,months){
 
     for(var i=0;i<workers.length;i++){
       var wk=workers[i];
-      if(ft){var ss=(wk.name+' '+specLabel(wk.spec)+' '+(getCompany(wk.companyId)?getCompany(wk.companyId).name:'')).toLowerCase();if(ss.indexOf(ft)<0)continue;}
+      if(ft){var ss=(wk.name+' '+specLabel(wk.spec)+' '+(getCompany(wk.companyId)?getCompany(wk.companyId).name:'')+' '+(wk.workerId||'')).toLowerCase();if(ss.indexOf(ft)<0)continue;}
 
       /* Check availability across months */
       var freeMonths=[],busyMonths=[],assignedHereMonths=[];
@@ -3516,9 +3630,9 @@ function wkMultiToggle(el){
 
 function wkMultiClose(){
   window._multiStaged={};
+  window._wkPickAvailOnly=false;
   if(window._asSel&&window._multiWbsId) window._asSel[window._multiWbsId]={};
   closeModal();
-  /* scroll preserved by renderAssignmentsPage itself */
   renderAssignmentsPage();
 }
 
@@ -3640,6 +3754,12 @@ function openAssignmentPicker(pairs){
       var sl2=specLabel(wk.spec);
       var cardCls='wk-card'; var statusHtml=''; var clickable=true;
 
+      /* Available-only filter: skip workers who are not free or not assigned here */
+      if(availOnly&&!stg){
+        var isAvailOrHere=freeMonths.length>0||assignedHereMonths.length>0;
+        if(!isAvailOrHere) continue;
+      }
+
       if(stg==='remove'){
         cardCls+=' wc-remove';
         statusHtml='<span class="wc-status" style="background:var(--rl);color:var(--red)">✕ Will be removed</span>';
@@ -3693,6 +3813,13 @@ function wkPickFilter(val){
   else if(window._multiRebuild) window._multiRebuild(val);
 }
 
+function wkSetAvailOnly(checked){
+  window._wkPickAvailOnly=!!checked;
+  var ft=document.getElementById('wkPickFilter')?document.getElementById('wkPickFilter').value:'';
+  if(window._pickerBuild) window._pickerBuild(ft);
+  else if(window._multiRebuild) window._multiRebuild(ft);
+}
+
 function pickerToggle(el){
   var wid=el.dataset.wid;
   var staged=window._pickerStaged;
@@ -3718,6 +3845,7 @@ function pickerToggle(el){
 
 function pickerClose(){
   window._pickerStaged={}; window._pickerPairs=[];
+  window._wkPickAvailOnly=false;
   closeModal();
   renderAssignmentsPage();
 }
@@ -4119,6 +4247,14 @@ function openWorkerModal(id){
   h+='<div><label>Rating</label><select id="wkRating">'+ratingO+'</select></div>';
   h+='<div><label>Comment</label><input id="wkComment" value="'+(wk.comment||'')+'"></div>';
   h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  var catModalO='<option value="">— No category —</option>';
+  (S.workerCategories||[]).forEach(function(cat){catModalO+='<option value="'+cat.id+'"'+(wk.category===cat.id?' selected':'')+'>'+cat.name+'</option>';});
+  h+='<div><label>Category</label><select id="wkCategory">'+catModalO+'</select></div>';
+  h+='<div><label>Responsible</label><input id="wkResponsible" placeholder="e.g. John Smith" value="'+(wk.responsible||'')+'"></div>';
+  h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr;gap:10px">';
+  h+='</div>';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">';
   h+='<div><label>Contract Start</label><input id="wkStart" type="date" value="'+fmtDate(wk.dateDebut)+'"></div>';
   h+='<div><label>Contract End</label><input id="wkEnd" type="date" value="'+fmtDate(wk.dateFinContrat)+'"></div>';
@@ -4147,6 +4283,10 @@ function saveWorkerModal(id,isNew){
   var ds=document.getElementById('wkStart').value;
   var de=document.getElementById('wkEnd').value;
   var dr=document.getElementById('wkRev').value;
+  var rating=document.getElementById('wkRating')?document.getElementById('wkRating').value:'';
+  var comment=document.getElementById('wkComment')?document.getElementById('wkComment').value.trim():'';
+  var category=document.getElementById('wkCategory')?document.getElementById('wkCategory').value:'';
+  var responsible=document.getElementById('wkResponsible')?document.getElementById('wkResponsible').value.trim():'';
 
   var wk={
     id:id,
@@ -4156,7 +4296,8 @@ function saveWorkerModal(id,isNew){
     spec:spec,
     dateDebut:ds?new Date(ds).toISOString():null,
     dateFinContrat:de?new Date(de).toISOString():null,
-    dateFinRevisee:dr?new Date(dr).toISOString():null
+    dateFinRevisee:dr?new Date(dr).toISOString():null,
+    rating:rating,comment:comment,category:category,responsible:responsible
   };
 
   if(isNew){
@@ -4202,7 +4343,26 @@ function renderWorkersPage(){
   html+='<select style="font-size:12px;padding:5px 8px;border:1.5px solid var(--border2);border-radius:7px" onchange="wkSetFilter(\'co\',this.value)">'+coOpts+'</select>';
   html+='<select style="font-size:12px;padding:5px 8px;border:1.5px solid var(--border2);border-radius:7px" onchange="wkSetFilter(\'spec\',this.value)">'+spOpts+'</select>';
   html+='<select style="font-size:12px;padding:5px 8px;border:1.5px solid var(--border2);border-radius:7px" onchange="wkSetFilter(\'rating\',this.value)">'+rtOpts+'</select>';
+  /* Category filter */
+  var catOpts='<option value="">All categories</option>';
+  (S.workerCategories||[]).forEach(function(cat){catOpts+='<option value="'+cat.id+'"'+(window._wkFilterCat===cat.id?' selected':'')+'>'+cat.name+'</option>';});
+  html+='<select style="font-size:12px;padding:5px 8px;border:1.5px solid var(--border2);border-radius:7px" onchange="wkSetFilter(\'cat\',this.value)">'+catOpts+'</select>';
   html+='<button class="btn soft" style="font-size:11px" onclick="wkToggleSort()">A→Z '+(window._wkSort?'▲':'▼')+'</button>';
+  html+='<button class="btn soft" style="font-size:11px" onclick="openWkCategoriesModal()">&#127991; Categories</button>';
+  /* End-of-mission month filter */
+  var eomOpts='<option value="">All end months</option>';
+  var eomMonths={};
+  for(var ei=0;ei<S.workers.length;ei++){
+    var ewk=S.workers[ei];
+    /* Last assigned month */
+    var lastSlot=-1;
+    for(var em2=NM-1;em2>=0;em2--){var ea=getAssignmentSlot(ewk.id,em2);if(ea){lastSlot=em2;break;}}
+    if(lastSlot>=0&&ML[lastSlot]) eomMonths[lastSlot]=ML[lastSlot].short;
+  }
+  Object.keys(eomMonths).sort(function(a,b){return+a-+b;}).forEach(function(k){
+    eomOpts+='<option value="'+k+'"'+(window._wkFilterEOM===+k?' selected':'')+'>Until '+eomMonths[k]+'</option>';
+  });
+  html+='<select style="font-size:12px;padding:5px 8px;border:1.5px solid var(--border2);border-radius:7px" onchange="wkSetFilter(\'eom\',this.value)">'+eomOpts+'</select>';
   html+='<span style="font-size:11px;color:var(--tx3);margin-left:4px">'+S.workers.length+' workers</span>';
   html+='<button class="btn pri" style="margin-left:auto" onclick="openWorkerModal(null)">&#10133; Add Worker</button>';
   html+='</div>';
@@ -4211,9 +4371,11 @@ function renderWorkersPage(){
   html+='<table class="wk-table" id="wkTable">';
   html+='<thead><tr>';
   html+='<th style="width:32px;text-align:center"><input class="wk-cb" type="checkbox" id="wkCbAll" onchange="wkToggleAll(this)" title="Select all"></th>';
-  html+='<th>#</th><th>Name</th><th>Company</th><th>Specialty</th>';
+  html+='<th>#</th><th>Name</th><th>Company</th><th>Specialty</th><th style="min-width:80px">Rate (€/MM)</th>';
   html+='<th>Start</th><th>End</th><th>Status</th>';
   html+='<th style="min-width:80px">Rating</th>';
+  html+='<th style="min-width:120px">Category</th>';
+  html+='<th style="min-width:120px">Responsible</th>';
   html+='<th style="min-width:140px">Comment</th>';
   for(var m=0;m<NM;m++) html+='<th style="min-width:24px;text-align:center;font-size:9px">'+(ML[m]?ML[m].short:MS[m])+'</th>';
   html+='<th></th>';
@@ -4223,6 +4385,7 @@ function renderWorkersPage(){
   var filterCo=window._wkFilterCo||'';
   var filterSpec=window._wkFilterSpec||'';
   var filterRating=window._wkFilterRating||'';
+  var filterCat=window._wkFilterCat||'';
   /* Sort */
   var sorted=S.workers.slice();
   if(window._wkSort) sorted.sort(function(a,b){return a.name.localeCompare(b.name);});
@@ -4235,6 +4398,12 @@ function renderWorkersPage(){
     if(filterCo&&wk.companyId!==filterCo) continue;
     if(filterSpec&&wk.spec!==filterSpec) continue;
     if(filterRating&&(wk.rating||'')!==filterRating) continue;
+    if(filterCat&&(wk.category||'')!==filterCat) continue;
+    if(window._wkFilterEOM!==undefined&&window._wkFilterEOM!==''){
+      var _lastSlot=-1;
+      for(var _em=NM-1;_em>=0;_em--){var _ea=getAssignmentSlot(wk.id,_em);if(_ea){_lastSlot=_em;break;}}
+      if(_lastSlot!==+window._wkFilterEOM) continue;
+    }
     var gst=workerGlobalStatus(wk);
     var stBadge='';
     if(gst==='active') stBadge='<span class="sb sb-ok">Active</span>';
@@ -4253,26 +4422,48 @@ function renderWorkersPage(){
     var wspO='<option value="">—</option>';
     for(var si3=0;si3<SPECS.length;si3++) wspO+='<option value="'+SPECS[si3].key+'"'+(wk.spec===SPECS[si3].key?' selected':'')+'>'+SPECS[si3].label+'</option>';
     html+='<td><div class="co-sel-wrap" style="font-size:11px"><span class="spsel sk-'+wk.spec+'" style="cursor:pointer">'+(sl||'—')+'</span><select onchange="wkFieldSave(\''+wk.id+'\',\'spec\',this.value)">'+wspO+'</select></div></td>';
-    var ds=wk.dateDebut?new Date(wk.dateDebut).toLocaleDateString('fr-FR'):'';
-    var de=effectiveEnd(wk)?new Date(effectiveEnd(wk)).toLocaleDateString('fr-FR'):'';
-    html+='<td style="font-size:10px;color:var(--tx3)">'+ds+'</td>';
-    html+='<td style="font-size:10px;color:var(--tx3)">'+de+'</td>';
+    /* Rate (€/MM) — click to edit */
+    var wkRate=wk.tarif||workerPU(wk)||0;
+    html+='<td style="font-family:var(--mono);font-size:11px;color:var(--blue);cursor:pointer" onclick="wkEditField(event,\''+wk.id+'\',\'tarif\')">'+( wkRate?wkRate.toFixed(0):'<span style="color:var(--border2)">—</span>')+'</td>';
+    var ds=wk.dateDebut?new Date(wk.dateDebut).toISOString().slice(0,10):'';
+    var de2=effectiveEnd(wk)?new Date(effectiveEnd(wk)).toISOString().slice(0,10):'';
+    var dsDisp=wk.dateDebut?new Date(wk.dateDebut).toLocaleDateString('fr-FR'):'—';
+    var deDisp=effectiveEnd(wk)?new Date(effectiveEnd(wk)).toLocaleDateString('fr-FR'):'—';
+    html+='<td style="font-size:10px;color:var(--tx3);cursor:pointer" onclick="wkEditField(event,\''+wk.id+'\',\'dateDebut\')" title="Click to edit">'+dsDisp+'</td>';
+    html+='<td style="font-size:10px;color:var(--tx3);cursor:pointer" onclick="wkEditField(event,\''+wk.id+'\',\'dateFinContrat\')" title="Click to edit">'+deDisp+'</td>';
     html+='<td>'+stBadge+'</td>';
     /* Rating + Comment — visible before scrolling right */
     var ratingColor={'Very Good':'var(--green)','Good':'var(--blue)','Average':'var(--amber)','Bad':'var(--red)'}[wk.rating||'']||'var(--tx3)';
     /* Rating — inline select */
     var wrtO=['','Very Good','Good','Average','Bad'].map(function(r){return '<option value="'+r+'"'+(wk.rating===r?' selected':'')+'>'+( r||'—')+'</option>';}).join('');
     html+='<td><div class="co-sel-wrap"><span style="font-size:10px;font-weight:700;color:'+ratingColor+'">'+(wk.rating||'—')+'</span><select onchange="wkFieldSave(\''+wk.id+'\',\'rating\',this.value)">'+wrtO+'</select></div></td>';
+    /* Category — inline select */
+    var catOptsCells='<option value="">—</option>';
+    (S.workerCategories||[]).forEach(function(cat){catOptsCells+='<option value="'+cat.id+'"'+(wk.category===cat.id?' selected':'')+'>'+cat.name+'</option>';});
+    var wkCat=(S.workerCategories||[]).find(function(cat){return cat.id===wk.category;});
+    var catStyle=wkCat?('background:'+wkCat.color+';color:#fff;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600'):'font-size:10px;color:var(--tx3)';
+    html+='<td><div class="co-sel-wrap"><span style="'+catStyle+'">'+(wkCat?wkCat.name:'—')+'</span><select onchange="wkFieldSave(\''+wk.id+'\',\'category\',this.value)">'+catOptsCells+'</select></div></td>';
+    /* Responsible — click to edit inline */
+    html+='<td style="font-size:10px;color:var(--tx2);cursor:pointer;white-space:nowrap" onclick="wkEditField(event,\''+wk.id+'\',\'responsible\')">'+( wk.responsible||'<span style="color:var(--border2)">—</span>')+'</td>';
     /* Comment — click to edit inline */
     html+='<td style="font-size:10px;color:var(--tx3);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer" title="'+(wk.comment||'Click to add comment')+'" onclick="wkEditField(event,\''+wk.id+'\',\'comment\')">'+( wk.comment||'<span style="color:var(--border2)">add comment</span>')+'</td>';
-    /* Month dots */
+    /* Month cells — WBS name if assigned, clickable to reassign */
     for(var m=0;m<NM;m++){
       var sl2=ML[m]; if(!sl2) continue;
       var active2=workerActiveInMonth(wk,sl2.month,sl2.year);
       var asgn2=getAssignmentSlot(wk.id,m);
-      var dot=asgn2?'&#9679;':active2?'·':'';
-      var col2=asgn2?'color:var(--green)':active2?'color:var(--border2)':'color:var(--rl)';
-      html+='<td style="text-align:center;font-size:10px;'+col2+'">'+dot+'</td>';
+      var cellContent='';
+      if(asgn2){
+        var wbsName2='';
+        for(var wi2=0;wi2<S.wbs.length;wi2++) if(S.wbs[wi2].id===asgn2.wbsId){wbsName2=S.wbs[wi2].name;break;}
+        var tipTxt=wbsName2.replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+        cellContent='<span style="font-size:9px;background:var(--gl);color:var(--green);padding:1px 5px;border-radius:8px;white-space:nowrap;display:inline-block;max-width:90px;overflow:hidden;text-overflow:ellipsis;cursor:pointer" title="'+tipTxt+'" onclick="wkCellClick(event,\''+wk.id+'\','+m+')">'+wbsName2+'</span>';
+      } else if(active2){
+        cellContent='<span style="font-size:9px;color:var(--border2);cursor:pointer" onclick="wkCellClick(event,\''+wk.id+'\','+m+')" title="Assign to WBS">+</span>';
+      } else {
+        cellContent='<span style="font-size:9px;color:var(--rl)">—</span>';
+      }
+      html+='<td style="text-align:center;padding:2px 3px;max-width:100px;overflow:hidden" data-wkid="'+wk.id+'" data-wkm="'+m+'">'+cellContent+'</td>';
     }
     html+='<td style="white-space:nowrap"><button class="bic" onclick="openWorkerModal(\''+wk.id+'\')">e</button> <button class="bic del" onclick="deleteWorker(\''+wk.id+'\')">x</button></td>';
     html+='</tr>';
@@ -4285,44 +4476,311 @@ function renderWorkersPage(){
 
 
 
-function wkFieldSave(wkId,field,val){
+function wkFieldSave(wkId,field,val,noRender){
   for(var i=0;i<S.workers.length;i++){
     if(S.workers[i].id===wkId){
       S.workers[i][field]=val;
       break;
     }
   }
-  saveS(); renderWorkersPage();
+  saveS();
+  if(!noRender) renderWorkersPage();
 }
 
 function wkEditField(e,wkId,field){
   e.stopPropagation();
   var td=e.currentTarget;
+  if(td.querySelector('input,textarea')) return; /* already editing */
   var wk=null; for(var i=0;i<S.workers.length;i++) if(S.workers[i].id===wkId){wk=S.workers[i];break;}
   if(!wk) return;
-  var cur=wk[field]||'';
+  var isDate=(field==='dateDebut'||field==='dateFinContrat'||field==='dateFinRevisee');
+  var isNum=(field==='tarif');
+  var curRaw=wk[field]!=null?wk[field]:'';
+  var cur=isDate?(curRaw?new Date(curRaw).toISOString().slice(0,10):''):isNum?(curRaw||0)+'':curRaw;
   var inp=document.createElement(field==='comment'?'textarea':'input');
+  if(isDate) inp.type='date';
+  else if(isNum){inp.type='number';inp.step='1';inp.min='0';}
   inp.value=cur;
-  inp.style.cssText='width:100%;font-family:var(--font);font-size:11px;border:1.5px solid var(--blue);border-radius:4px;padding:2px 6px;outline:none;'+(field==='comment'?'resize:none;height:40px':'');
-  td.innerHTML=''; td.appendChild(inp); inp.focus(); inp.select();
+  inp.style.cssText='width:100%;font-family:var(--font);font-size:11px;border:1.5px solid var(--blue);border-radius:4px;padding:2px 6px;outline:none;box-sizing:border-box;'+(field==='comment'?'resize:none;height:40px':'');
+  td.innerHTML=''; td.appendChild(inp);
+  inp.focus(); if(!isDate&&inp.select) inp.select();
+  var saved=false;
   function save(){
+    if(saved) return; saved=true;
     var v=inp.value.trim();
-    wkFieldSave(wkId,field,v);
+    if(isDate) v=v?new Date(v+'T00:00:00').toISOString():null;
+    else if(isNum) v=parseFloat(v)||0;
+    /* Save without re-rendering whole page */
+    wkFieldSave(wkId,field,v,true);
+    wkUpdateCellDisplay(td,wkId,field,v);
   }
   inp.addEventListener('blur',save);
-  inp.addEventListener('keydown',function(e2){if(e2.key==='Enter'&&field!=='comment'){e2.preventDefault();save();}if(e2.key==='Escape'){renderWorkersPage();}});
+  inp.addEventListener('keydown',function(e2){
+    if(e2.key==='Enter'&&field!=='comment'){e2.preventDefault();save();}
+    if(e2.key==='Escape'){e2.preventDefault();if(!saved){saved=true;wkUpdateCellDisplay(td,wkId,field,wk[field]);}}
+  });
+}
+
+function wkUpdateCellDisplay(td,wkId,field,val){
+  if(field==='name'){
+    td.textContent=val||'—';
+  } else if(field==='comment'){
+    td.textContent=val||'';
+    td.title=val||'Click to add comment';
+  } else if(field==='tarif'){
+    var n=parseFloat(val)||0;
+    td.innerHTML=n?n.toFixed(0):'<span style="color:var(--border2)">—</span>';
+  } else if(field==='dateDebut'||field==='dateFinContrat'||field==='dateFinRevisee'){
+    td.textContent=val?new Date(val).toLocaleDateString('fr-FR'):'—';
+  } else {
+    renderWorkersPage();
+  }
+}
+
+
+/* ---- Worker Categories modal ---- */
+function openWkCategoriesModal(){
+  var box=document.getElementById('mbox');
+  box.className='modal';
+  document.getElementById('mbg').className='mbg';
+  var cats=S.workerCategories||[];
+  var colors=['#3a7d54','#3d5a80','#8c5a00','#a84040','#4e4580','#2a7a7a','#6a4a7a','#5a6a00'];
+
+  var h='<h3>&#127991; Worker Categories</h3>';
+  h+='<div id="catList" style="margin-bottom:12px">';
+  if(cats.length===0) h+='<div style="color:var(--tx3);font-size:12px;padding:8px 0">No categories yet. Add one below.</div>';
+  cats.forEach(function(cat){
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">';
+    h+='<span style="width:16px;height:16px;border-radius:50%;background:'+cat.color+';display:inline-block;flex-shrink:0"></span>';
+    h+='<span style="flex:1;font-size:12px;font-weight:600">'+cat.name+'</span>';
+    var nWk=S.workers.filter(function(w){return w.category===cat.id;}).length;
+    h+='<span style="font-size:10px;color:var(--tx3)">'+nWk+' worker'+(nWk!==1?'s':'')+'</span>';
+    h+='<button class="bic del" onclick="deleteWkCategory(\''+cat.id+'\')" title="Delete">x</button>';
+    h+='</div>';
+  });
+  h+='</div>';
+  h+='<div style="background:var(--bg2);border-radius:8px;padding:10px 12px">';
+  h+='<div style="font-size:11px;font-weight:700;color:var(--tx3);margin-bottom:8px">Add new category</div>';
+  h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+  h+='<input id="newCatName" placeholder="Category name" style="flex:1;min-width:140px">';
+  h+='<div style="display:flex;gap:4px">';
+  colors.forEach(function(col,i){
+    h+='<div onclick="selectCatColor(\''+col+'\')" style="width:20px;height:20px;border-radius:50%;background:'+col+';cursor:pointer;border:2px solid transparent" id="catCol_'+i+'"></div>';
+  });
+  h+='</div>';
+  h+='<input type="hidden" id="newCatColor" value="'+colors[0]+'">';
+  h+='<button class="btn pri" onclick="addWkCategory()">+ Add</button>';
+  h+='</div></div>';
+  h+='<div class="ma"><button class="btn" onclick="closeModal();renderWorkersPage()">Close</button></div>';
+  box.innerHTML=h;
+  document.getElementById('mbg').style.display='flex';
+  /* Highlight first color */
+  var fc=document.getElementById('catCol_0');
+  if(fc) fc.style.border='2px solid #000';
+}
+
+function selectCatColor(col){
+  document.getElementById('newCatColor').value=col;
+  document.querySelectorAll('[id^="catCol_"]').forEach(function(el){el.style.border='2px solid transparent';});
+  /* Find which swatch was clicked */
+  var swatches=document.querySelectorAll('[id^="catCol_"]');
+  swatches.forEach(function(el){
+    if(el.style.background===col||el.style.backgroundColor===col) el.style.border='2px solid #000';
+  });
+}
+
+function addWkCategory(){
+  var name=(document.getElementById('newCatName').value||'').trim();
+  var color=document.getElementById('newCatColor').value||'#3d5a80';
+  if(!name){showToast('Category name required','warn');return;}
+  if(!S.workerCategories) S.workerCategories=[];
+  var id='cat_'+uid();
+  S.workerCategories.push({id:id,name:name,color:color});
+  saveS();
+  openWkCategoriesModal(); /* refresh */
+}
+
+function deleteWkCategory(id){
+  if(!confirm('Delete this category? Workers will lose this category tag.')) return;
+  S.workerCategories=(S.workerCategories||[]).filter(function(c){return c.id!==id;});
+  S.workers.forEach(function(w){if(w.category===id)w.category='';});
+  saveS(); openWkCategoriesModal();
+}
+
+
+function wkUpdateCell(td,wkId,field,val){
+  if(field==='name'||field==='comment'||field==='responsible'){
+    td.textContent=val||'';
+    if(field==='comment') td.title=val||'';
+  } else if(field==='tarif'){
+    td.textContent=val?parseFloat(val).toFixed(0):'—';
+  } else if(field==='dateDebut'||field==='dateFinContrat'||field==='dateFinRevisee'){
+    td.textContent=val?new Date(val).toLocaleDateString('fr-FR'):'—';
+  } else {
+    renderWorkersPage();
+  }
+}
+
+
+/* ============================================================
+   WORKER TABLE CELL CLICK — assign/reassign via WBS picker
+   ============================================================ */
+window._wkCellSel = {}; /* {wkId_m: true} — selected cells in worker table */
+
+function wkCellClick(e,wkId,m){
+  e.stopPropagation();
+  /* Toggle selection */
+  var key=wkId+'_'+m;
+  if(window._wkCellSel[key]) delete window._wkCellSel[key];
+  else window._wkCellSel[key]=true;
+  /* Highlight selected cells */
+  var nSel=Object.keys(window._wkCellSel).length;
+  /* Re-render just the status bar without full re-render */
+  wkUpdateCellSelBar(nSel);
+  /* Color the clicked cell */
+  var td=e.currentTarget.closest('td');
+  if(td){
+    var isNowSel=!!window._wkCellSel[key];
+    td.style.background=isNowSel?'rgba(61,90,128,.15)':'';
+    td.style.outline=isNowSel?'2px solid var(--blue)':'';
+  }
+}
+
+function wkUpdateCellSelBar(nSel){
+  var bar=document.getElementById('wkCellSelBar');
+  if(!bar){
+    /* Create bar above table */
+    if(nSel===0) return;
+    var filterDiv=document.querySelector('#pageContent > div');
+    if(!filterDiv) return;
+    bar=document.createElement('div');
+    bar.id='wkCellSelBar';
+    bar.style.cssText='display:flex;align-items:center;gap:8px;padding:6px 14px;background:var(--blue);color:#fff;font-size:12px;font-weight:600;flex-shrink:0;';
+    bar.innerHTML='<span id="wkCellSelCount">0</span> cell(s) selected &nbsp;·&nbsp; '+
+      '<button onclick="wkCellAssign()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:3px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700">Assign to WBS</button> '+
+      '<button onclick="wkCellRemove()" style="background:rgba(168,64,64,.5);border:1px solid rgba(255,150,150,.4);color:#fff;padding:3px 10px;border-radius:6px;cursor:pointer;font-size:11px">Remove assignment</button> '+
+      '<button onclick="wkCellClear()" style="background:none;border:1px solid rgba(255,255,255,.3);color:#fff;padding:3px 8px;border-radius:6px;cursor:pointer;font-size:11px">✕ Clear</button>';
+    filterDiv.parentNode.insertBefore(bar, filterDiv.nextSibling);
+  }
+  if(nSel===0){if(bar)bar.remove();return;}
+  var cnt=bar.querySelector('#wkCellSelCount');
+  if(cnt) cnt.textContent=nSel;
+}
+
+function wkCellClear(){
+  window._wkCellSel={};
+  /* Remove highlights */
+  document.querySelectorAll('td[data-wkid]').forEach(function(td){
+    td.style.background=''; td.style.outline='';
+  });
+  var bar=document.getElementById('wkCellSelBar');
+  if(bar) bar.remove();
+}
+
+function wkCellRemove(){
+  var keys=Object.keys(window._wkCellSel);
+  if(!keys.length) return;
+  keys.forEach(function(key){
+    var parts=key.split('_'); var wkId=parts.slice(0,-1).join('_'); var m=+parts[parts.length-1];
+    var sl=ML[m]; if(!sl) return;
+    S.assignments=S.assignments.filter(function(a){
+      return !(a.workerId===wkId&&a.month===sl.month&&a.year===sl.year);
+    });
+  });
+  window._wkCellSel={};
+  saveS();
+  showToast('Assignments removed','ok');
+  renderWorkersPage();
+}
+
+function wkCellAssign(){
+  var keys=Object.keys(window._wkCellSel);
+  if(!keys.length) return;
+  /* Build a list of {wkId, month} pairs */
+  var cellPairs=keys.map(function(key){
+    var parts=key.split('_'); var wkId=parts.slice(0,-1).join('_'); var m=+parts[parts.length-1];
+    return{wkId:wkId,month:m};
+  });
+  /* Open WBS selection modal */
+  openWBSPickerForWorkers(cellPairs);
+}
+
+function openWBSPickerForWorkers(cellPairs){
+  var box=document.getElementById('mbox');
+  box.className='modal';
+  document.getElementById('mbg').style.display='flex';
+  document.getElementById('mbg').className='mbg';
+
+  /* Unique months */
+  var months=[...new Set(cellPairs.map(function(p){return p.month;}))].sort(function(a,b){return a-b;});
+  var monthLabels=months.map(function(m){return ML[m]?ML[m].short:MS[m];}).join(', ');
+  var nWorkers=[...new Set(cellPairs.map(function(p){return p.wkId;}))].length;
+
+  var h='<h3>&#128203; Assign to WBS</h3>';
+  h+='<p style="font-size:12px;color:var(--tx2);margin-bottom:12px">'+nWorkers+' worker(s) · '+monthLabels+'</p>';
+  h+='<div style="max-height:360px;overflow-y:auto">';
+
+  /* Group WBS by group */
+  for(var gi=0;gi<S.groups.length;gi++){
+    var g=S.groups[gi];
+    var allGW=[];
+    S.wbs.filter(function(w){return w.parentId===g.id;}).forEach(function(w){allGW.push(w);});
+    for(var si=0;si<g.sub.length;si++) S.wbs.filter(function(w){return w.parentId===g.sub[si].id;}).forEach(function(w){allGW.push(w);});
+    if(!allGW.length) continue;
+    h+='<div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;padding:6px 0 3px;letter-spacing:.05em">'+g.name+'</div>';
+    allGW.forEach(function(wbs){
+      h+='<div onclick="wkCellApplyWBS(\''+wbs.id+'\')" style="padding:7px 10px;border-radius:7px;cursor:pointer;border:1.5px solid var(--border2);margin-bottom:4px;display:flex;align-items:center;gap:8px" onmouseover="this.style.background=\'var(--bl)\'" onmouseout="this.style.background=\'\'">';
+      if(wbs.code) h+='<span style="font-size:9px;background:var(--bg2);padding:1px 5px;border-radius:4px;font-family:var(--mono)">'+wbs.code+'</span>';
+      h+='<span style="font-weight:600;font-size:12px">'+wbs.name+'</span>';
+      h+='</div>';
+    });
+  }
+  h+='</div>';
+  h+='<div class="ma"><button class="btn" onclick="closeModal()">Cancel</button></div>';
+  box.innerHTML=h;
+  /* Store pairs for the apply step */
+  window._wkCellPairs=cellPairs;
+}
+
+function wkCellApplyWBS(wbsId){
+  var pairs=window._wkCellPairs||[];
+  var added=0;
+  pairs.forEach(function(p){
+    var sl=ML[p.month]; if(!sl) return;
+    /* Remove existing assignment for this worker+month */
+    S.assignments=S.assignments.filter(function(a){
+      return !(a.workerId===p.wkId&&a.month===sl.month&&a.year===sl.year);
+    });
+    assignWorker(p.wkId,wbsId,p.month,false);
+    added++;
+  });
+  window._wkCellSel={};
+  window._wkCellPairs=[];
+  closeModal();
+  saveS();
+  showToast('+'+added+' assigned to WBS','ok');
+  renderWorkersPage();
 }
 
 function wkSetFilter(type,val){
   if(type==='co') window._wkFilterCo=val;
   else if(type==='spec') window._wkFilterSpec=val;
   else if(type==='rating') window._wkFilterRating=val;
+  else if(type==='cat') window._wkFilterCat=val;
+  else if(type==='eom') window._wkFilterEOM=val===''?'':+val;
   renderWorkersPage();
 }
 function wkToggleSort(){window._wkSort=!window._wkSort;renderWorkersPage();}
 function wkDoSearch(val){
   window._wkSearch=val;
-  renderWorkersPage();
+  clearTimeout(window._wkSearchTimer);
+  window._wkSearchTimer=setTimeout(function(){
+    renderWorkersPage();
+    setTimeout(function(){
+      var s=document.getElementById('wkSearch');
+      if(s&&document.activeElement!==s){s.focus();var l=val.length;s.setSelectionRange(l,l);}
+    },10);
+  },120);
 }
 function wkCbChange(cb){
   var wid=cb.dataset.wid;
@@ -4466,6 +4924,7 @@ function renderAssignmentsPage(){
      The page column is highlighted as "current assignment month" */
   var startCol=page; /* from CC month to end of project */
 
+  window._cellMap={}; window._cellMapIdx=0; /* reset before rebuilding grid */
   html+='<div class="as-grid" style="flex:1;overflow:auto;min-height:0">';
   html+='<table class="as-table"><thead><tr>';
   html+='<th class="ap1" style="position:sticky;left:0;z-index:25;background:var(--bg2)">WBS</th>';
@@ -4527,7 +4986,7 @@ function asWBSRow(wbs,ind,startCol,page){
     var isPastCol=(m<S.ccM);
 
     /* Compare with prev month to show delta */
-    var prevWorkers=m>0?getWBSWorkers(wbs.id,m-1):[];
+    var prevWorkers=(m>startCol&&m>0)?getWBSWorkers(wbs.id,m-1):[];
     var delta=nW-prevWorkers.length;
     var deltaHtml='';
     if(m>startCol&&delta!==0){
@@ -4551,7 +5010,7 @@ function asWBSRow(wbs,ind,startCol,page){
       var isExp=!workerActiveInMonth(wk2,ML[m]?ML[m].month:m,ML[m]?ML[m].year:YEAR);
       tipLines.push((isFmWk?'★ ':'')+wk2.name+(wk2.workerId?' #'+wk2.workerId:'')+(isExp?' ⚠':''));
     }
-    var tip=tipLines.join('&#10;');
+    var tip=tipLines.join('&#10;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
     /* Count display */
     var need=budHM>0?Math.ceil(budHM):0;
@@ -4566,10 +5025,12 @@ function asWBSRow(wbs,ind,startCol,page){
     var colBg=isCurCol?'rgba(61,90,128,.06)':isPastCol?'var(--bg2)':'';
     var borderL=isCurCol?'border-left:2px solid var(--blue);':'';
     var canClick=isPastCol?(!!(!S.asLocked)):true;
-    h+='<td oncontextmenu="asCellContext(event,\''+wbs.id+'\','+m+')" style="padding:2px;'+(colBg?'background:'+colBg+';':'')+borderL+'">';
-    /* Use inline onclick with encoded wbsId to avoid dataset issues */
-    var onclickAttr=canClick?' onclick="asDirectPick(event,\''+wbs.id+'\','+m+')"':'';
-    h+='<div class="'+cellCls+'" data-cell-wbs="'+wbs.id+'" data-cell-m="'+m+'"'+(tip?' data-tip="'+tip+'"':'')+' style="cursor:'+(canClick?'pointer':'default')+'"'+onclickAttr+'>';
+    if(!window._cellMap) window._cellMap={};
+    /* Use numeric index as key — avoids ALL special char issues */
+    var cellKey='k'+(window._cellMapIdx=(window._cellMapIdx||0)+1);
+    window._cellMap[cellKey]={wbsId:wbs.id,m:m};
+    var onclickAttr=canClick?' onclick="handleCellClick(event,\''+cellKey+'\')"':'';
+    h+='<div class="'+cellCls+'" data-cell-key="'+cellKey+'" data-cell-wbs="'+wbs.id+'" data-cell-m="'+m+'"'+(tip?' data-tip="'+tip+'"':'')+' style="cursor:'+(canClick?'pointer':'default')+'"'+onclickAttr+'>';
     h+=countHtml;
     h+='<div class="as-names">';
     for(var k=0;k<workers.length;k++){
@@ -4596,16 +5057,20 @@ function asClearAll(){
 }
 function asClearSel(wbsId){if(window._asSel)window._asSel[wbsId]={};renderAssignmentsPage();}
 
-function asDirectPick(e,wbsId,m){
+function handleCellClick(e,cellKey){
   e.stopPropagation();
-  /* Single click = toggle cell selection */
+  var info=window._cellMap&&window._cellMap[cellKey];
+  if(!info) return;
+  asDirectPick(e,info.wbsId,info.m);
+}
+
+function asDirectPick(e,wbsId,m){
   if(!window._asSel) window._asSel={};
   if(!window._asSel[wbsId]) window._asSel[wbsId]={};
   window._asSel[wbsId][m]=!window._asSel[wbsId][m];
   /* Visual feedback in-place */
   var divs=document.querySelectorAll('[data-cell-wbs="'+wbsId+'"][data-cell-m="'+m+'"]');
   divs.forEach(function(d){d.classList.toggle('as-cell-sel',!!window._asSel[wbsId][m]);});
-  /* Update assign button without full re-render */
   asUpdateTopBar();
 }
 
@@ -4754,22 +5219,10 @@ function openWorkerPickerMultiWBS(pairs){
 function openWP(el){openWorkerPickerMulti(el.dataset.wbs,[parseInt(el.dataset.m)]);}
 
 
-</script>
 
-<button class="sug-fab" onclick="toggleSug()" title="Suggestions">&#128161;</button>
-<div class="sug-panel" id="sugPanel">
-  <h4>&#128161; Suggestions & Improvements</h4>
-  <textarea id="sugText" placeholder="Describe your suggestion..."></textarea>
-  <div style="display:flex;justify-content:flex-end;margin-top:8px;gap:6px;">
-    <button class="btn" onclick="toggleSug()">Close</button>
-    <button class="btn pri" onclick="submitSug()">Add</button>
-  </div>
-  <div class="sug-list" id="sugList"></div>
-</div>
-</body>
-</html>
 
 function triggerWBSImport(){var el=document.getElementById('wbsImportInput');if(el){el.value='';el.click();}}
+
 
 </script>
 </body>
