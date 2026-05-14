@@ -4754,6 +4754,7 @@ function renderAssignmentsPage(){
      The page column is highlighted as "current assignment month" */
   var startCol=page; /* from CC month to end of project */
 
+  window._cellMap={}; window._cellMapIdx=0; /* reset before rebuilding grid */
   html+='<div class="as-grid" style="flex:1;overflow:auto;min-height:0">';
   html+='<table class="as-table"><thead><tr>';
   html+='<th class="ap1" style="position:sticky;left:0;z-index:25;background:var(--bg2)">WBS</th>';
@@ -4839,7 +4840,7 @@ function asWBSRow(wbs,ind,startCol,page){
       var isExp=!workerActiveInMonth(wk2,ML[m]?ML[m].month:m,ML[m]?ML[m].year:YEAR);
       tipLines.push((isFmWk?'★ ':'')+wk2.name+(wk2.workerId?' #'+wk2.workerId:'')+(isExp?' ⚠':''));
     }
-    var tip=tipLines.join('&#10;');
+    var tip=tipLines.join('&#10;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
     /* Count display */
     var need=budHM>0?Math.ceil(budHM):0;
@@ -4854,9 +4855,12 @@ function asWBSRow(wbs,ind,startCol,page){
     var colBg=isCurCol?'rgba(61,90,128,.06)':isPastCol?'var(--bg2)':'';
     var borderL=isCurCol?'border-left:2px solid var(--blue);':'';
     var canClick=isPastCol?(!!(!S.asLocked)):true;
-    var onclickAttr=canClick?' onclick="asDirectPick(event,\''+wbs.id+'\','+m+')"':'';
-    h+='<td style="padding:2px;'+(colBg?'background:'+colBg+';':'')+borderL+'">';
-    h+='<div class="'+cellCls+'" data-cell-wbs="'+wbs.id+'" data-cell-m="'+m+'"'+(tip?' data-tip="'+tip+'"':'')+' style="cursor:'+(canClick?'pointer':'default')+'"'+onclickAttr+'>';
+    if(!window._cellMap) window._cellMap={};
+    /* Use numeric index as key — avoids ALL special char issues */
+    var cellKey='k'+(window._cellMapIdx=(window._cellMapIdx||0)+1);
+    window._cellMap[cellKey]={wbsId:wbs.id,m:m};
+    var onclickAttr=canClick?' onclick="handleCellClick(event,\''+cellKey+'\')"':'';
+    h+='<div class="'+cellCls+'" data-cell-key="'+cellKey+'" data-cell-wbs="'+wbs.id+'" data-cell-m="'+m+'"'+(tip?' data-tip="'+tip+'"':'')+' style="cursor:'+(canClick?'pointer':'default')+'"'+onclickAttr+'>';
     h+=countHtml;
     h+='<div class="as-names">';
     for(var k=0;k<workers.length;k++){
